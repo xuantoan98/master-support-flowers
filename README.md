@@ -1,42 +1,28 @@
-# Flutter Base
+# Tiệm Hoa
 
-## Information
+Ứng dụng quản lý đơn hoa offline cho cửa hàng nhỏ. Đây là lát cắt đầu của kế hoạch trong [plan.md](plan.md); trạng thái từng phase ở [progress.md](progress.md).
 
-Flutter version: `3.41.9`
+## Chạy dự án
 
-### Base Flutter with:
+Yêu cầu Flutter SDK tương thích Dart >= 3.10 và Android SDK hoặc Xcode trên macOS.
 
-- State management: [flutter_bloc](https://pub.dev/packages/flutter_bloc)
-- Asset management: [flutter_gen](https://pub.dev/packages/flutter_gen)
-- Flavor management: [flutter_flavorizr](https://pub.dev/packages/flutter_flavorizr)
-- Evironment management: [flutter_dotenv](https://pub.dev/packages/flutter_dotenv)
-- Route management: [auto_route](https://pub.dev/packages/auto_route)
-- Dependencies
-  Injection: [get_it](https://pub.dev/packages/get_it) + [injectable](https://pub.dev/packages/injectable)
-- Responsiveness: [flutter_screenutil](https://pub.dev/packages/flutter_screenutil)
--
-
-Localization: [flutter_localizations](https://docs.flutter.dev/ui/accessibility-and-localization/internationalization)
-
-### and Boilerplate code for:
-
-- Screen: Splash, Intro, Language, Settings
-- Firebase: Remote config, Analytics
-- Admob intergration & meta ads mediation & mintegral + app lovin
-- AppsFlyers SDK
-- IAP (optional) --> later
-
-## Usage
-
-### Setup
-
-```console
+```sh
 flutter pub get
-flutter gen-l10n
-flutter pub run build_runner build --delete-conflicting-outputs
+flutter analyze
+flutter test
+flutter run --flavor dev
+flutter build apk --debug --flavor dev
 ```
 
-### Set up quảng cáo
+`lib/main.dart` khởi động trực tiếp vào app offline. Màn chính có lịch tháng, danh sách đơn với tìm kiếm/lọc trạng thái/ngày giao, thống kê cơ bản và màn cá nhân. Nút **Tạo đơn** mở form 4 bước; ngày trên lịch được truyền vào form, bản nháp được lưu và khôi phục khi quay lại. Một đơn có thể chứa nhiều mẫu hoa và số lượng riêng. Màn **Mẫu hoa** có sẵn 10 mẫu với giá, định lượng và thumbnail; người dùng có thể chọn ảnh từ thư viện, hoặc để trống để app gán ngẫu nhiên một trong 6 ảnh hoa mặc định. Màn **Danh sách mua hoa** cộng định lượng của các đơn sắp giao theo hôm nay/ngày mai/7 ngày và lưu dấu đã mua. Đơn và khách được lưu trong SQLite trên thiết bị. Màn chi tiết cho phép sửa đơn, thêm/xóa ảnh, thu thêm/hoàn tiền và đổi trạng thái theo chuỗi; tiền đã thu khi sửa đơn được giữ theo lịch sử thanh toán.
 
-- Meta ads: Android: thay ClientToken & ApplicationId trong Android Manifest, iOS: thay CLIENT-TOKEN
-  và APP-ID tương ứng
+Giao diện dùng bảng màu xanh cẩm tú cầu pastel và cặp font Playfair Display (tiêu đề), Be Vietnam Pro (nội dung) theo [hệ thống màu và kiểu chữ](he-thong-mau-sac-va-font-app-ban-hoa.md). Hai font được đóng gói trong app theo [giấy phép OFL](third_party/google_fonts/). Thẻ ảnh và bố cục tham chiếu từ nhánh hotel booking của `Best-Flutter-UI-Templates.zip` theo [giấy phép MIT](third_party/Best-Flutter-UI-Templates-LICENSE); logic và các màn nghiệp vụ vẫn là mã riêng của Tiệm Hoa.
+
+## Cấu trúc đang dùng
+
+- `lib/flower/domain`: model, trạng thái và quy tắc tiền đơn.
+- `lib/flower/data`: SQLite schema v10, migration, repository và lưu ảnh vào thư mục app.
+- `lib/flower/presentation`: giao diện và luồng tạo/xem đơn.
+- `test`: test nghiệp vụ và lưu lại dữ liệu sau khi mở lại DB.
+
+Boilerplate trước đây vẫn nằm trong `lib/src` và `lib/module` để tham khảo khi di chuyển chức năng. Chúng không còn nằm trong luồng chạy hoặc phân tích tĩnh của app mới. Các chức năng OCR, hóa đơn, nhắc việc, widget và Pro chưa được triển khai.

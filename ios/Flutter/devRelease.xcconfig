@@ -2,5 +2,5 @@
 #include "Generated.xcconfig"
 
 ASSET_PREFIX=dev
-BUNDLE_NAME=VTN Base Flutter Dev
-BUNDLE_DISPLAY_NAME=VTN Base Flutter Dev
+BUNDLE_NAME=Tiệm Hoa Dev
+BUNDLE_DISPLAY_NAME=Tiệm Hoa Dev

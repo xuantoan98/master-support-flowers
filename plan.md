@@ -23,7 +23,40 @@ Ngày lập: 16/11/2026. Nguồn yêu cầu sản phẩm: `Clone_app_Flowie_Quan
 
 **Lưu ý kỹ thuật:** `pubspec.yaml` đang chứa URL dependency có token nhúng. Trước khi chia sẻ repo hoặc chạy CI, chuyển credential sang cơ chế secret/SSH hợp lệ và thu hồi token cũ. Không sao chép URL này vào tài liệu/issue/log.
 
-## 3. Mô hình dữ liệu và quy tắc chung
+## 3. Công nghệ sử dụng và kiến trúc đề xuất
+
+Các mục “đang có” là bằng chứng từ repo; các mục “bổ sung” là lựa chọn triển khai ở Phase tương ứng, cần kiểm tra tương thích với Flutter hiện tại trước khi thêm dependency.
+
+| Lớp | Công nghệ | Trạng thái / lý do |
+| --- | --- | --- |
+| App & UI | Flutter/Dart, Material 3 làm nền component, `Cupertino` cho picker/interaction đặc trưng iOS | Đang có Flutter và `useMaterial3: true`. Xây design system riêng cho app hoa, không dùng theme Material mặc định. |
+| Điều hướng & state | `auto_route`, `flutter_bloc`/Cubit | Đang có; giữ lại để giảm thay đổi boilerplate. |
+| DI & codegen | `get_it`, `injectable`, `build_runner` | Đang có; đăng ký repository, service và các adapter theo feature. |
+| Dữ liệu offline | SQLite qua `drift` (đề xuất), migration có version; `path_provider` + file system cho ảnh; `shared_preferences` chỉ cho setting nhỏ | `path_provider`/`shared_preferences` đang có; Drift/SQLite cần bổ sung Phase 1. Không dùng SharedPreferences/HydratedBloc làm kho đơn hàng. |
+| Ảnh & nhận diện | Chụp/chọn ảnh bằng package Flutter phù hợp; iOS Vision OCR qua Swift/MethodChannel; gợi ý tên hoa bằng Core ML model đã đánh giá hoặc bộ phân loại trên thiết bị | Bổ sung Phase 2. Chưa cam kết độ chính xác cho nhận diện hoa trước khi có bộ ảnh test; luôn cho sửa tay. |
+| Hóa đơn & QR | Render Flutter widget thành PNG; tạo VietQR theo chuẩn dữ liệu ngân hàng/amount, kiểm chứng payload; `share_plus` | `share_plus` đang có; renderer/QR bổ sung Phase 4. Ưu tiên tạo QR offline để không gửi dữ liệu đơn ra ngoài. |
+| Nhắc việc | Local notifications (`flutter_local_notifications` hoặc Swift `UNUserNotificationCenter`) | Bổ sung Phase 5. Firebase Messaging đang có chỉ phục vụ push, không thay thế lịch nhắc đơn cục bộ. |
+| Widget & hoạt động trực tiếp | Swift, WidgetKit, ActivityKit, App Group; Flutter `MethodChannel`/shared snapshot | Bổ sung Phase 6 cho iOS; giao diện widget viết native. |
+| Thống kê | Query tổng hợp trên SQLite; biểu đồ Flutter tùy biến hoặc thư viện chart sau khi chốt thiết kế | Bổ sung Phase 7; phép tính nằm ở tầng domain/query, không tính rải rác trong widget. |
+| Analytics/crash | Firebase Analytics/Crashlytics hiện có, cấu hình tối thiểu và lọc PII; kiểm tra Adjust/ads | Chỉ giữ telemetry cần thiết và phù hợp cam kết local-first. |
+| Pro sau release | iCloud/CloudKit qua native bridge, Face ID qua LocalAuthentication, IAP/StoreKit qua wrapper hiện có sau khi kiểm tra | Phase 9; chưa coi package IAP có sẵn là quyền lợi Pro đã hoạt động. |
+| Kiểm thử | `flutter_test`, test repository/migration, widget test luồng chính, integration test trên iOS; Xcode test cho WidgetKit/ActivityKit | `flutter_test` đang có; test nghiệp vụ và CI cần bổ sung. |
+
+Kiến trúc theo feature: `presentation (screen + Bloc)` → `domain (entity + use case)` → `data (repository + Drift/file/native adapter)`. Các dịch vụ native nằm sau interface để luồng đơn chạy được khi camera/OCR/widget không khả dụng.
+
+**Quyết định triển khai tạm (16/11/2026):** Lát cắt offline đầu tiên dùng SQLite qua `sqflite` và `MaterialApp`/Navigator để tách luồng nghiệp vụ khỏi boilerplate có dependency riêng, Firebase và quảng cáo. `lib/flower` là mã đang chạy; phần Dart boilerplate cũ chưa tham gia build, phần native quảng cáo Android được giữ trong `legacy/android_native` để đối chiếu. Khi mở rộng các luồng, đánh giá lại việc dùng `auto_route`/Bloc/DI theo nhu cầu thực tế; migration SQLite và test dữ liệu là gate bắt buộc. Đây không phải quyết định hoàn thành Phase 0 hoặc thay đổi mục tiêu iOS của bản phát hành đầu.
+
+### Định hướng thẩm mỹ: Material 3 có phù hợp app hoa?
+
+Có, nếu dùng **Flutter Material 3 như bộ khung tương tác**, rồi tự thiết kế visual language. `Material UI`/MUI của web không phải thư viện phù hợp với Flutter. Theme hiện tại chỉ đặt màu tím `#9B5BEF`, một `bodyMedium` 14sp và vài style nút/dialog; như vậy chưa tạo ra cảm giác của app hoa trong PDF.
+
+- **Màu:** nền kem/hồng phấn, điểm nhấn hồng hoa và xanh lá dịu; màu trạng thái đơn/tiền cần tương phản đủ rõ. Quy định color tokens và kiểm tra contrast, tránh dùng hồng cho mọi thông tin.
+- **Chữ và khoảng trắng:** cỡ chữ phân cấp cho doanh thu, ngày giao, tên hoa, thông tin phụ; giữ số tiền dễ đọc, date/time rõ; khoảng trắng thoáng hơn boilerplate. Chọn font hỗ trợ dấu tiếng Việt tốt và kiểm thử text scaling.
+- **Component riêng:** card đơn có ảnh hoa, timeline trạng thái, lịch có dấu ngày bận, nút tạo đơn nổi, bottom sheet ngày/giờ, form 4 bước, invoice template. Dùng Material/Cupertino ở tầng hành vi và accessibility, tùy biến hình dáng/bóng/viền/animation ở tầng trình bày.
+- **Ảnh và chuyển động:** ảnh hoa thật có khung/crop nhất quán; animation nhẹ cho lưu đơn/đổi trạng thái. Không để trang trí che nội dung giao hàng, số tiền hay thao tác nhanh.
+- **Tiêu chí duyệt UI ở Phase 0–3:** có design tokens, mockup cho dashboard + lịch + 4 bước tạo đơn + chi tiết; review trên iPhone nhỏ/lớn, dark mode nếu hỗ trợ, font lớn, tiếng Việt dài. Đối chiếu screenshot làm tham chiếu bố cục, không sao chép asset/brand.
+
+## 4. Mô hình dữ liệu và quy tắc chung
 
 - `ShopProfile`: tên shop, logo, thông tin chuyển khoản/VietQR, múi giờ, thiết lập thông báo.
 - `Customer`: id, tên, điện thoại chuẩn hóa, ghi chú, số lần mua; gợi ý theo tên/số và cho phép khách vãng lai. Không nhập danh bạ tự động.
@@ -33,7 +66,7 @@ Ngày lập: 16/11/2026. Nguồn yêu cầu sản phẩm: `Clone_app_Flowie_Quan
 - `OrderMedia`, `Payment`, `Reminder`: metadata ảnh mẫu/thành phẩm/lúc giao/feedback, các giao dịch cọc/thu thêm, mốc nhắc trước giao/quá giờ/thu tiền. Định nghĩa chính sách xóa, sửa, timezone và đơn trùng ngay từ đầu.
 - Tách repository/use case khỏi UI. DB và ảnh là nguồn dữ liệu chuẩn; Bloc/Cubit chỉ quản lý trạng thái màn hình. Viết migration từ schema v1 và kiểm tra mở lại dữ liệu sau nâng cấp.
 
-## 4. Các phase triển khai
+## 5. Các phase triển khai
 
 ### Phase 0 — Chốt phạm vi và nền dự án
 
@@ -95,7 +128,7 @@ Ngày lập: 16/11/2026. Nguồn yêu cầu sản phẩm: `Clone_app_Flowie_Quan
 
 **Đầu ra:** bản Pro có đồng bộ và mua hàng đáng tin cậy. **Gate:** dữ liệu không nhân đôi/mất khi hai máy sửa cùng đơn; trial, mua, hủy, restore và lifetime kiểm thử bằng StoreKit sandbox.
 
-## 5. Thứ tự phụ thuộc và cách cập nhật
+## 6. Thứ tự phụ thuộc và cách cập nhật
 
 `Phase 0 → 1 → 2 → 3`; Phase 4 và 5 có thể triển khai sau khi model đơn ổn định; Phase 6 cần Phase 3/5; Phase 7 cần ledger và trạng thái hoàn chỉnh; Phase 8 đóng mọi gate v1; Phase 9 chỉ khởi động sau release.
 

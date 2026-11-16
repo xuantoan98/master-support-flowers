@@ -10,24 +10,8 @@
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
-		50C82FF62C74975B0000D1CB /* HomeNativeAdView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 50C82FF52C74975B0000D1CB /* HomeNativeAdView.xib */; };
-		50C82FF82C7498020000D1CB /* HomeNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C82FF72C7498020000D1CB /* HomeNativeAdFactory.swift */; };
-		50C82FFA2C7499B50000D1CB /* ExtraTopNativeAdView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 50C82FF92C7499B50000D1CB /* ExtraTopNativeAdView.xib */; };
-		50C82FFC2C7499C90000D1CB /* ExtraNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C82FFB2C7499C90000D1CB /* ExtraNativeAdFactory.swift */; };
-		50C82FFE2C74A0060000D1CB /* SmallNativeAdView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 50C82FFD2C74A0060000D1CB /* SmallNativeAdView.xib */; };
-		50C830002C74A2DE0000D1CB /* SmallNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C82FFF2C74A2DE0000D1CB /* SmallNativeAdFactory.swift */; };
-		50C830022C74A3DD0000D1CB /* NormalTopNativeAdView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 50C830012C74A3DD0000D1CB /* NormalTopNativeAdView.xib */; };
-		50C830042C74A43F0000D1CB /* NormalNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C830032C74A43F0000D1CB /* NormalNativeAdFactory.swift */; };
-		50C830072C74AC790000D1CB /* ButtonPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C830062C74AC790000D1CB /* ButtonPosition.swift */; };
-		50C830092C74AF740000D1CB /* ExtraBottomNativeAdView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 50C830082C74AF740000D1CB /* ExtraBottomNativeAdView.xib */; };
-		50C8300B2C74AF8A0000D1CB /* NormalBottomNativeAdView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 50C8300A2C74AF8A0000D1CB /* NormalBottomNativeAdView.xib */; };
-		50DCDF832BEF264800D230D0 /* RoundedLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DCDF7A2BEF264800D230D0 /* RoundedLabel.swift */; };
-		50DCDF842BEF264800D230D0 /* RoundedButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DCDF7B2BEF264800D230D0 /* RoundedButton.swift */; };
-		50DCDF852BEF264800D230D0 /* CommonAdLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DCDF7C2BEF264800D230D0 /* CommonAdLayout.swift */; };
 		50DCDF8D2BEF2B7A00D230D0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 50DCDF8C2BEF2B7A00D230D0 /* PrivacyInfo.xcprivacy */; };
 		6168A41C2510A3648BE3BCCD /* devProfile.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = C0318C3CE5BFF51B5C7364A1 /* devProfile.xcconfig */; };
-		6E2752D42E3B7694004F7CCB /* FullNativeAdView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 6E5A1D8E2E27B59500F50298 /* FullNativeAdView.xib */; };
-		6EE743ED2E27F902000E9E9A /* FullNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E5A1D902E27B5AE00F50298 /* FullNativeAdFactory.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		83196E6F37D84861D1F3E2DC /* prodLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = FB816DF7758B6F5C0E6A6FA4 /* prodLaunchScreen.storyboard */; };
 		90614C994B900714C246AEDA /* prodProfile.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 62C01E34BA061415293AE726 /* prodProfile.xcconfig */; };
@@ -36,7 +20,6 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		A53E2AE46BA84C437CB7EC42 /* devRelease.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 902D12476B1214DC6452E6EE /* devRelease.xcconfig */; };
 		AA62FE9FF3F514A434F6038A /* devLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 722D4A8407D883AF518A1440 /* devLaunchScreen.storyboard */; };
-		BEE34A99F678A574457E13C6 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 21E8E288DC9337CC72243C2C /* GoogleService-Info.plist */; };
 		D25177CA1FE20D79F587EEB0 /* prodDebug.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = A4273CEDDDC7F9E9D0B4138D /* prodDebug.xcconfig */; };
 		E47AE3F9B97B5AB2B696737C /* devDebug.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 8160E73F7E184CCABC9AFFA2 /* devDebug.xcconfig */; };
 		F8888A2B7A081C2602A692C8 /* prodRelease.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 0D428FD91F541AD30E0A0B4E /* prodRelease.xcconfig */; };
@@ -76,7 +59,6 @@
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		369B4D98E8E6D4FCCC9CFB7A /* Pods-Runner.profile-prod.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile-prod.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile-prod.xcconfig"; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
-		50C82FF12C7494FF0000D1CB /* AdjustSigSdk.xcframework */ = {isa = PBXFileReference; expectedSignature = "AppleDeveloperProgram:QGUGW9AUMK:adeven GmbH"; lastKnownFileType = wrapper.xcframework; name = AdjustSigSdk.xcframework; path = libs/AdjustSigSdk.xcframework; sourceTree = "<group>"; };
 		50C82FF52C74975B0000D1CB /* HomeNativeAdView.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = HomeNativeAdView.xib; sourceTree = "<group>"; };
 		50C82FF72C7498020000D1CB /* HomeNativeAdFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNativeAdFactory.swift; sourceTree = "<group>"; };
 		50C82FF92C7499B50000D1CB /* ExtraTopNativeAdView.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = ExtraTopNativeAdView.xib; sourceTree = "<group>"; };
@@ -275,7 +257,6 @@
 		E2DFDDD5487FD0A33DF7C637 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				50C82FF12C7494FF0000D1CB /* AdjustSigSdk.xcframework */,
 				8725557CB0DDA42A15C9F04E /* Pods_Runner.framework */,
 				6E7D56C62E068B2900488D9D /* ReplayKit.framework */,
 			);
@@ -307,7 +288,6 @@
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
 				6DFDA516F58AA6692291AF32 /* [CP] Check Pods Manifest.lock */,
-				E4DCE9353CC6B19E71F85715 /* Firebase Setup */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -377,27 +357,19 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6E2752D42E3B7694004F7CCB /* FullNativeAdView.xib in Resources */,
-				50C82FF62C74975B0000D1CB /* HomeNativeAdView.xib in Resources */,
 				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
-				50C8300B2C74AF8A0000D1CB /* NormalBottomNativeAdView.xib in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
 				E47AE3F9B97B5AB2B696737C /* devDebug.xcconfig in Resources */,
 				6168A41C2510A3648BE3BCCD /* devProfile.xcconfig in Resources */,
-				50C82FFE2C74A0060000D1CB /* SmallNativeAdView.xib in Resources */,
-				50C830022C74A3DD0000D1CB /* NormalTopNativeAdView.xib in Resources */,
 				50DCDF8D2BEF2B7A00D230D0 /* PrivacyInfo.xcprivacy in Resources */,
 				A53E2AE46BA84C437CB7EC42 /* devRelease.xcconfig in Resources */,
-				50C830092C74AF740000D1CB /* ExtraBottomNativeAdView.xib in Resources */,
-				50C82FFA2C7499B50000D1CB /* ExtraTopNativeAdView.xib in Resources */,
 				D25177CA1FE20D79F587EEB0 /* prodDebug.xcconfig in Resources */,
 				90614C994B900714C246AEDA /* prodProfile.xcconfig in Resources */,
 				F8888A2B7A081C2602A692C8 /* prodRelease.xcconfig in Resources */,
 				AA62FE9FF3F514A434F6038A /* devLaunchScreen.storyboard in Resources */,
 				83196E6F37D84861D1F3E2DC /* prodLaunchScreen.storyboard in Resources */,
-				BEE34A99F678A574457E13C6 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -499,25 +471,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		E4DCE9353CC6B19E71F85715 /* Firebase Setup */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Firebase Setup";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Runner/GoogleService-Info.plist",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "if [ \"$CONFIGURATION\" == \"Debug-dev\" ] || [ \"$CONFIGURATION\" == \"Release-dev\" ]; then\n  cp Runner/dev/GoogleService-Info.plist Runner/GoogleService-Info.plist\nelif [ \"$CONFIGURATION\" == \"Debug-prod\" ] || [ \"$CONFIGURATION\" == \"Release-prod\" ]; then\n  cp Runner/prod/GoogleService-Info.plist Runner/GoogleService-Info.plist\nfi\n\n";
-		};
+
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -533,17 +487,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6EE743ED2E27F902000E9E9A /* FullNativeAdFactory.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
-				50C82FF82C7498020000D1CB /* HomeNativeAdFactory.swift in Sources */,
-				50DCDF852BEF264800D230D0 /* CommonAdLayout.swift in Sources */,
-				50C830002C74A2DE0000D1CB /* SmallNativeAdFactory.swift in Sources */,
-				50C830042C74A43F0000D1CB /* NormalNativeAdFactory.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
-				50C830072C74AC790000D1CB /* ButtonPosition.swift in Sources */,
-				50DCDF832BEF264800D230D0 /* RoundedLabel.swift in Sources */,
-				50DCDF842BEF264800D230D0 /* RoundedButton.swift in Sources */,
-				50C82FFC2C7499C90000D1CB /* ExtraNativeAdFactory.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

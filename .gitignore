@@ -135,3 +135,8 @@ app.*.symbols
 # FVM Version Cache
 .fvm/
 lib/src/gen/l18n/
+# Local reference material and tooling, not part of the app
+.agents/
+Best-Flutter-UI-Templates.zip
+assets/template/
+Clone_app_Flowie_Quan_ly_don_hoa.pdf

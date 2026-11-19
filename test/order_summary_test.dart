@@ -30,6 +30,9 @@ class FakeCalendarRepository extends OrderRepository {
   final List<FlowerOrder> items;
 
   @override
+  Future<bool> remindersEnabled() async => false;
+
+  @override
   Future<List<FlowerOrder>> all() async => items;
 }
 
@@ -81,21 +84,112 @@ void main() {
       await tester.pumpWidget(FlowerApp(repository: repository));
       await tester.pumpAndSettle();
       for (var i = 0; i < 13 - now.month; i++) {
-        await tester.tap(find.byIcon(Icons.chevron_right));
+        await tester.tap(find.byTooltip('Tháng sau'));
         await tester.pumpAndSettle();
       }
-      await tester.drag(find.byType(ListView).first, const Offset(0, -700));
+      expect(find.text('Tháng 1, ${january.year}'), findsWidgets);
+      final scrollable = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(
+        find.text('Lịch giao 01/01/${january.year}'),
+        200,
+        scrollable: scrollable,
+      );
+      await tester.scrollUntilVisible(
+        find.byTooltip('Tháng trước'),
+        -200,
+        scrollable: scrollable,
+      );
       await tester.pumpAndSettle();
-      expect(find.text('Lịch giao 01/01/${january.year}'), findsOneWidget);
-      await tester.drag(find.byType(ListView).first, const Offset(0, 700));
+      await tester.tap(find.byTooltip('Tháng trước'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.chevron_left));
-      await tester.pumpAndSettle();
-      await tester.drag(find.byType(ListView).first, const Offset(0, -700));
-      await tester.pumpAndSettle();
-      expect(find.text('Lịch giao 01/12/${now.year}'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Lịch giao 01/12/${now.year}'),
+        200,
+        scrollable: scrollable,
+      );
     },
   );
+
+  testWidgets('month tiles show fanned order cards with a count badge', (
+    tester,
+  ) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final day = today.add(const Duration(days: 1));
+    final nextMonth = DateTime(today.year, today.month + 1);
+    await tester.pumpWidget(
+      FlowerApp(
+        repository: FakeCalendarRepository([
+          for (var i = 0; i < 4; i++)
+            sampleOrder(deliveryAt: day.add(Duration(hours: 9 + i))),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+    if (day.month == today.month) {
+      expect(
+        find.bySemanticsLabel(RegExp('^${day.day}/${day.month}, 4 đơn')),
+        findsOneWidget,
+      );
+      expect(find.text('4'), findsWidgets);
+    }
+    await tester.tap(find.byTooltip('Tháng sau'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Lịch giao ${dayLabel(nextMonth)}'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.scrollUntilVisible(
+      find.text('Tạo đơn cho ngày này'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Tạo đơn cho ngày này'), findsOneWidget);
+  });
+
+  testWidgets('tapping a day with orders enlarges its cards', (tester) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    await tester.pumpWidget(
+      FlowerApp(
+        repository: FakeCalendarRepository([
+          sampleOrder(
+            deliveryAt: today.add(const Duration(hours: 23, minutes: 59)),
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final cell = find.bySemanticsLabel(
+      RegExp('^${today.day}/${today.month}, hôm nay'),
+    );
+    await tester.ensureVisible(cell);
+    await tester.pumpAndSettle();
+    await tester.tap(cell);
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel(RegExp('^Mở đơn Lan, 23:59')), findsOneWidget);
+    expect(find.textContaining('Chạm card để mở đơn'), findsOneWidget);
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel(RegExp('^Mở đơn Lan')), findsNothing);
+  });
+
+  testWidgets('overdue orders show in the attention sheet', (tester) async {
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    await tester.pumpWidget(
+      FlowerApp(
+        repository: FakeCalendarRepository([
+          sampleOrder(deliveryAt: yesterday),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 đơn quá hạn'), findsOneWidget);
+    await tester.tap(find.byTooltip('Đơn cần chú ý'));
+    await tester.pumpAndSettle();
+    expect(find.text('Đơn cần chú ý'), findsWidgets);
+    expect(find.textContaining('Quá hạn ·'), findsOneWidget);
+  });
 
   testWidgets('create action is disabled when calendar selects a past day', (
     tester,
@@ -108,7 +202,7 @@ void main() {
       find.byType(FloatingActionButton),
     );
     expect(create.onPressed, isNull);
-    await tester.tap(find.text('Đơn hàng'));
+    await tester.tap(find.byTooltip('Đơn hàng'));
     await tester.pumpAndSettle();
     expect(
       tester

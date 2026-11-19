@@ -4,11 +4,13 @@ import 'dart:math';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import '../domain/business_stats.dart';
 import '../domain/catalog_placeholders.dart';
 import '../domain/catalog_product.dart';
 import '../domain/flower_order.dart';
 import '../domain/order_item.dart';
 import '../domain/order_media.dart';
+import '../domain/shop_profile.dart';
 import '../domain/shopping_list.dart';
 
 const _sampleImageIndex = <String, int>{
@@ -38,7 +40,7 @@ class OrderRepository {
         databasePath ?? p.join(await getDatabasesPath(), 'flower_orders.db');
     _db = await openDatabase(
       path,
-      version: 10,
+      version: 13,
       onCreate: (db, version) async {
         await db.execute('''
         CREATE TABLE customers (
@@ -85,6 +87,8 @@ class OrderRepository {
         await _createMediaTable(db);
         await _createShoppingTable(db);
         await _createOrderChangesTable(db);
+        await _createShopProfileTable(db);
+        await _createSettingsTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -164,8 +168,116 @@ class OrderRepository {
             );
           }
         }
+        if (oldVersion < 11) {
+          await _createShopProfileTable(db);
+        }
+        if (oldVersion < 12) {
+          final columns = await db.rawQuery('PRAGMA table_info(shop_profile)');
+          if (!columns.any((column) => column['name'] == 'qr_image_path')) {
+            await db.execute(
+              "ALTER TABLE shop_profile ADD COLUMN qr_image_path TEXT NOT NULL DEFAULT ''",
+            );
+          }
+        }
+        if (oldVersion < 13) {
+          await _createSettingsTable(db);
+        }
       },
     );
+  }
+
+  Future<void> _createSettingsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
+  }
+
+  Future<bool> remindersEnabled() async {
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['reminders_enabled'],
+    );
+    return rows.isNotEmpty && rows.first['value'] == '1';
+  }
+
+  Future<void> setRemindersEnabled(bool enabled) async {
+    await db.insert('app_settings', {
+      'key': 'reminders_enabled',
+      'value': enabled ? '1' : '0',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// 'system', 'light' or 'dark'.
+  Future<String> themePreference() async {
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['theme_mode'],
+    );
+    final value = rows.isEmpty ? null : rows.first['value'];
+    return value == 'light' || value == 'dark' ? value! as String : 'system';
+  }
+
+  Future<void> setThemePreference(String value) async {
+    await db.insert('app_settings', {
+      'key': 'theme_mode',
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<bool> liveActivityEnabled() async {
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['live_activity_enabled'],
+    );
+    return rows.isNotEmpty && rows.first['value'] == '1';
+  }
+
+  Future<void> setLiveActivityEnabled(bool enabled) async {
+    await db.insert('app_settings', {
+      'key': 'live_activity_enabled',
+      'value': enabled ? '1' : '0',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> _createShopProfileTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS shop_profile (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        address TEXT NOT NULL,
+        bank_bin TEXT NOT NULL,
+        bank_name TEXT NOT NULL,
+        account_number TEXT NOT NULL,
+        account_holder TEXT NOT NULL,
+        qr_image_path TEXT NOT NULL DEFAULT ''
+      )
+    ''');
+  }
+
+  Future<ShopProfile> loadShopProfile() async {
+    final rows = await db.query('shop_profile', where: 'id = 1');
+    return rows.isEmpty ? const ShopProfile() : ShopProfile.fromMap(rows.first);
+  }
+
+  Future<void> saveShopProfile(ShopProfile profile) async {
+    final issue = profile.validate();
+    if (issue != null) {
+      throw ArgumentError(issue);
+    }
+    await db.insert('shop_profile', {
+      'id': 1,
+      ...profile.toMap(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> _createPaymentsTable(DatabaseExecutor db) async {
@@ -812,6 +924,18 @@ class OrderRepository {
             amount: row['amount']! as int,
             occurredAt: DateTime.parse(row['occurred_at']! as String),
             note: row['note']! as String,
+          ),
+        )
+        .toList();
+  }
+
+  Future<List<OrderPayment>> allPayments() async {
+    final rows = await db.query('payments', columns: ['amount', 'occurred_at']);
+    return rows
+        .map(
+          (row) => OrderPayment(
+            amount: row['amount']! as int,
+            occurredAt: DateTime.parse(row['occurred_at']! as String),
           ),
         )
         .toList();

@@ -34,7 +34,7 @@ Các mục “đang có” là bằng chứng từ repo; các mục “bổ sung
 | DI & codegen | `get_it`, `injectable`, `build_runner` | Đang có; đăng ký repository, service và các adapter theo feature. |
 | Dữ liệu offline | SQLite qua `drift` (đề xuất), migration có version; `path_provider` + file system cho ảnh; `shared_preferences` chỉ cho setting nhỏ | `path_provider`/`shared_preferences` đang có; Drift/SQLite cần bổ sung Phase 1. Không dùng SharedPreferences/HydratedBloc làm kho đơn hàng. |
 | Ảnh & nhận diện | Chụp/chọn ảnh bằng package Flutter phù hợp; iOS Vision OCR qua Swift/MethodChannel; gợi ý tên hoa bằng Core ML model đã đánh giá hoặc bộ phân loại trên thiết bị | Bổ sung Phase 2. Chưa cam kết độ chính xác cho nhận diện hoa trước khi có bộ ảnh test; luôn cho sửa tay. |
-| Hóa đơn & QR | Render Flutter widget thành PNG; tạo VietQR theo chuẩn dữ liệu ngân hàng/amount, kiểm chứng payload; `share_plus` | `share_plus` đang có; renderer/QR bổ sung Phase 4. Ưu tiên tạo QR offline để không gửi dữ liệu đơn ra ngoài. |
+| Hóa đơn & QR | Render Flutter widget thành PNG; chủ shop chọn ảnh QR từ thư viện, lưu trong thư mục app; `share_plus` | Ảnh QR do người dùng cung cấp, không sinh payload trong app và không gửi dữ liệu đơn tới dịch vụ QR. Ảnh có thể chứa số tiền cố định nên hóa đơn không khẳng định QR khớp khoản còn phải thu. |
 | Nhắc việc | Local notifications (`flutter_local_notifications` hoặc Swift `UNUserNotificationCenter`) | Bổ sung Phase 5. Firebase Messaging đang có chỉ phục vụ push, không thay thế lịch nhắc đơn cục bộ. |
 | Widget & hoạt động trực tiếp | Swift, WidgetKit, ActivityKit, App Group; Flutter `MethodChannel`/shared snapshot | Bổ sung Phase 6 cho iOS; giao diện widget viết native. |
 | Thống kê | Query tổng hợp trên SQLite; biểu đồ Flutter tùy biến hoặc thư viện chart sau khi chốt thiết kế | Bổ sung Phase 7; phép tính nằm ở tầng domain/query, không tính rải rác trong widget. |
@@ -94,9 +94,9 @@ Có, nếu dùng **Flutter Material 3 như bộ khung tương tác**, rồi tự
 
 ### Phase 4 — Hóa đơn, chia sẻ và VietQR
 
-**Việc làm:** hồ sơ shop, cấu hình tài khoản nhận tiền; render ảnh hóa đơn có shop, khách, sản phẩm, ngày giao, tổng/cọc/còn lại; tạo VietQR cho tiền cọc hoặc số còn lại dựa trên số tiền thực tế; share sheet iOS tới Zalo/Messenger/app khác. Bảo đảm ảnh chia sẻ không lộ ghi chú nội bộ và nội dung QR có thể kiểm tra trước khi gửi.
+**Việc làm:** hồ sơ shop, chọn/thay/xóa ảnh QR ngân hàng do chủ shop cung cấp; render ảnh hóa đơn có shop, khách, sản phẩm, ngày giao, tổng/cọc/còn lại và ảnh QR; share sheet iOS tới Zalo/Messenger/app khác. Bảo đảm ảnh chia sẻ không lộ ghi chú nội bộ, cảnh báo nếu ảnh QR có số tiền cố định và cho kiểm tra trước khi gửi.
 
-**Đầu ra:** ảnh hóa đơn rõ trên máy và khi chia sẻ, QR theo đúng số tiền. **Gate:** đối chiếu nội dung ảnh/QR với đơn mẫu, kiểm tra diacritics tiếng Việt và nhiều kích thước màn; thử chia sẻ trên thiết bị thật.
+**Đầu ra:** ảnh hóa đơn rõ trên máy và khi chia sẻ, ảnh QR tải lên còn nguyên sau khởi động lại. **Gate:** đối chiếu ảnh QR tải lên và thông tin hóa đơn với đơn mẫu, kiểm tra diacritics tiếng Việt và nhiều kích thước màn; thử chia sẻ và quét ảnh QR trên thiết bị thật.
 
 ### Phase 5 — Nhắc việc và danh sách hoa cần mua
 

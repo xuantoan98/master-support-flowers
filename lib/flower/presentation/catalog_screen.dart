@@ -108,7 +108,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   title: 'Mẫu hoa',
                   trailing: Text(
                     '${snapshot.data!.length} mẫu',
-                    style: const TextStyle(color: FlowerTemplateTheme.muted),
+                    style: TextStyle(color: context.palette.muted),
                   ),
                 ),
               );
@@ -142,16 +142,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             const SizedBox(height: 7),
                             Text(
                               '${product.components.length} loại hoa',
-                              style: const TextStyle(
-                                color: FlowerTemplateTheme.muted,
+                              style: TextStyle(
+                                color: context.palette.muted,
                                 fontSize: 12,
                               ),
                             ),
                             const SizedBox(height: 10),
                             Text(
                               _money(product.price),
-                              style: const TextStyle(
-                                color: FlowerTemplateTheme.navy,
+                              style: TextStyle(
+                                color: context.palette.primary,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 16,
                               ),
@@ -318,7 +318,7 @@ class _CatalogEditorScreenState extends State<CatalogEditorScreen> {
       title: Text(widget.initial == null ? 'Thêm mẫu hoa' : 'Sửa mẫu hoa'),
     ),
     body: ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 112),
       children: [
         TemplateSectionHeading(
           eyebrow: 'BỘ SƯU TẬP',
@@ -410,18 +410,13 @@ class _CatalogEditorScreenState extends State<CatalogEditorScreen> {
         for (var i = 0; i < inputs.length; i++) _componentCard(i),
       ],
     ),
-    bottomNavigationBar: SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: FlowerTemplateTheme.line)),
-        ),
-        child: FilledButton(
-          onPressed: saving ? null : save,
-          child: Text(saving ? 'Đang lưu...' : 'Lưu mẫu'),
-        ),
+    floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    floatingActionButton: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: FloatingFormBar(
+        onPrimary: saving ? null : save,
+        primaryLabel: saving ? 'Đang lưu...' : 'Lưu mẫu',
+        primaryIcon: saving ? null : Icons.check_circle_rounded,
       ),
     ),
   );

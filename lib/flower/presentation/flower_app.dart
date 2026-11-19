@@ -1,52 +1,42 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
 
+import '../data/address_suggester.dart';
+import '../data/contact_picker.dart';
+import '../data/live_activity_service.dart';
+import '../data/order_reminder_service.dart';
 import '../data/order_repository.dart';
-import '../domain/catalog_placeholders.dart';
+import '../domain/business_stats.dart';
+import '../domain/calendar_overview.dart';
 import '../domain/catalog_product.dart';
 import '../domain/flower_order.dart';
 import '../domain/order_item.dart';
 import '../domain/order_summary.dart';
+import 'address_field.dart';
 import 'app_toast.dart';
+import 'calendar_widgets.dart';
 import 'catalog_product_image.dart';
 import 'catalog_screen.dart';
+import 'flower_dock.dart';
 import 'flower_template_theme.dart';
 import 'flower_template_widgets.dart';
+import 'invoice_screen.dart';
 import 'money_input_formatter.dart';
 import 'order_media_section.dart';
+import 'order_success.dart';
+import 'shop_profile_screen.dart';
 import 'shopping_list_screen.dart';
-
-const _rose = FlowerTemplateTheme.navy;
-const _ink = FlowerTemplateTheme.ink;
-const _sage = FlowerTemplateTheme.muted;
+import 'step_progress.dart';
 
 String money(int value) =>
     '${NumberFormat.decimalPattern(Intl.getCurrentLocale()).format(value)} đ';
 String dayLabel(DateTime value) => DateFormat('dd/MM/yyyy', 'vi').format(value);
-
-String _orderThumbnail(FlowerOrder order) {
-  final name = order.effectiveItems.first.name.toLowerCase();
-  if (name.contains('cúc') || name.contains('hướng dương')) {
-    return catalogPlaceholders[2];
-  }
-  if (name.contains('cát tường')) {
-    return catalogPlaceholders[3];
-  }
-  if (name.contains('đồng tiền')) {
-    return catalogPlaceholders[4];
-  }
-  if (name.contains('ly')) {
-    return catalogPlaceholders[1];
-  }
-  if (name.contains('hồng đỏ') || name.contains('đỏ')) {
-    return catalogPlaceholders[5];
-  }
-  return catalogPlaceholders.first;
-}
 
 Color _statusColor(OrderStatus status) => switch (status) {
   OrderStatus.newOrder => FlowerTemplateTheme.navy,
@@ -57,7 +47,25 @@ Color _statusColor(OrderStatus status) => switch (status) {
   OrderStatus.cancelled => FlowerTemplateTheme.muted,
 };
 
-class FlowerApp extends StatelessWidget {
+IconData _statusIcon(OrderStatus status) => switch (status) {
+  OrderStatus.newOrder => Icons.auto_awesome_rounded,
+  OrderStatus.making => Icons.content_cut_rounded,
+  OrderStatus.awaitingApproval => Icons.thumb_up_alt_rounded,
+  OrderStatus.delivering => Icons.pedal_bike_rounded,
+  OrderStatus.delivered => Icons.verified_rounded,
+  OrderStatus.cancelled => Icons.cancel_rounded,
+};
+
+Color _statusColorOf(BuildContext context, OrderStatus status) =>
+    context.palette.adapt(_statusColor(status));
+
+ThemeMode _themeModeFrom(String value) => switch (value) {
+  'light' => ThemeMode.light,
+  'dark' => ThemeMode.dark,
+  _ => ThemeMode.system,
+};
+
+class FlowerApp extends StatefulWidget {
   const FlowerApp({
     super.key,
     required this.repository,
@@ -67,33 +75,76 @@ class FlowerApp extends StatelessWidget {
   final Locale locale;
 
   @override
+  State<FlowerApp> createState() => _FlowerAppState();
+}
+
+class _FlowerAppState extends State<FlowerApp> {
+  final themeMode = ValueNotifier(ThemeMode.system);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final value = await widget.repository.themePreference();
+      themeMode.value = _themeModeFrom(value);
+    } catch (_) {
+      // Keep following the system setting when preferences cannot be read.
+    }
+  }
+
+  @override
+  void dispose() {
+    themeMode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final locale = widget.locale;
     Intl.defaultLocale = locale.languageCode;
-    return MaterialApp(
-      title: 'Tiệm Hoa',
-      debugShowCheckedModeBanner: false,
-      locale: locale,
-      supportedLocales: const [Locale('vi'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      theme: FlowerTemplateTheme.light(),
-      home: FlowerHome(repository: repository),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeMode,
+      builder: (context, mode, _) => MaterialApp(
+        title: 'Tiệm Hoa',
+        debugShowCheckedModeBanner: false,
+        locale: locale,
+        supportedLocales: const [Locale('vi'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        theme: FlowerTemplateTheme.light(),
+        darkTheme: FlowerTemplateTheme.dark(),
+        themeMode: mode,
+        home: FlowerHome(repository: widget.repository, themeMode: themeMode),
+      ),
     );
   }
 }
 
 class FlowerHome extends StatefulWidget {
-  const FlowerHome({super.key, required this.repository});
+  const FlowerHome({super.key, required this.repository, this.themeMode});
   final OrderRepository repository;
+
+  /// Shared with [FlowerApp]; null hides the appearance setting.
+  final ValueNotifier<ThemeMode>? themeMode;
 
   @override
   State<FlowerHome> createState() => _FlowerHomeState();
 }
 
-class _FlowerHomeState extends State<FlowerHome> {
+class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
+  final liveActivity = LiveActivityService();
+  bool liveActivityEnabled = false;
+  bool updatingLiveActivity = false;
+  final reminders = OrderReminderService();
+  bool remindersEnabled = false;
+  bool updatingReminders = false;
   int tab = 0;
   final orderSearch = TextEditingController();
   OrderStatus? orderStatusFilter;
@@ -103,17 +154,30 @@ class _FlowerHomeState extends State<FlowerHome> {
   bool get selectedDayIsPast =>
       DateUtils.dateOnly(selected).isBefore(DateUtils.dateOnly(DateTime.now()));
   List<FlowerOrder> orders = [];
+  List<OrderPayment> statsPayments = [];
+  StatsWindow statsWindow = StatsWindow.at(StatsPeriod.month, DateTime.now());
+  bool statsLoading = false;
+  String? statsError;
   bool loading = true;
   String? error;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     refresh();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !updatingReminders) {
+      refresh();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     orderSearch.dispose();
     super.dispose();
   }
@@ -130,23 +194,61 @@ class _FlowerHomeState extends State<FlowerHome> {
     }
   }
 
-  void changeMonth(int offset) {
+  void shiftCalendar(int offset) {
+    HapticFeedback.selectionClick();
     final next = DateTime(month.year, month.month + offset);
+    final now = DateTime.now();
     setState(() {
       month = next;
-      selected = DateTime(next.year, next.month);
+      selected = next.year == now.year && next.month == now.month
+          ? DateUtils.dateOnly(now)
+          : next;
+    });
+  }
+
+  void selectDay(DateTime day) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      selected = day;
+      month = DateTime(day.year, day.month);
     });
   }
 
   Future<void> refresh() async {
     try {
       final result = await widget.repository.all();
+      final enabled = await widget.repository.remindersEnabled();
+      final liveEnabled =
+          Platform.isIOS && await widget.repository.liveActivityEnabled();
       if (mounted) {
         setState(() {
           orders = result;
+          remindersEnabled = enabled;
+          liveActivityEnabled = liveEnabled;
           loading = false;
           error = null;
         });
+      }
+      if (enabled) {
+        try {
+          await reminders.sync(result, enabled: true);
+        } catch (_) {
+          if (mounted) {
+            AppToast.show(context, 'Không thể cập nhật nhắc việc');
+          }
+        }
+      }
+      if (Platform.isIOS) {
+        try {
+          await liveActivity.sync(result, enabled: liveEnabled);
+        } catch (_) {
+          if (mounted && liveEnabled) {
+            AppToast.show(context, 'Không thể cập nhật Live Activity');
+          }
+        }
+      }
+      if (tab == 2) {
+        await loadStatsPayments();
       }
     } catch (_) {
       if (mounted) {
@@ -154,6 +256,126 @@ class _FlowerHomeState extends State<FlowerHome> {
           loading = false;
           error = 'Không thể tải đơn hàng';
         });
+      }
+    }
+  }
+
+  Future<void> loadStatsPayments() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      statsLoading = true;
+      statsError = null;
+    });
+    try {
+      final payments = await widget.repository.allPayments();
+      if (mounted) {
+        setState(() {
+          statsPayments = payments;
+          statsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          statsLoading = false;
+          statsError = 'Không thể tải giao dịch để tính thống kê';
+        });
+      }
+    }
+  }
+
+  void changeTab(int value) {
+    setState(() => tab = value);
+    if (value == 2) {
+      loadStatsPayments();
+    }
+  }
+
+  void selectStatsPeriod(StatsPeriod period) {
+    final now = DateTime.now();
+    final anchor = statsWindow.contains(now)
+        ? now
+        : DateTime.fromMillisecondsSinceEpoch(
+            (statsWindow.start.millisecondsSinceEpoch +
+                    statsWindow.end.millisecondsSinceEpoch) ~/
+                2,
+          );
+    setState(() => statsWindow = StatsWindow.at(period, anchor));
+  }
+
+  Future<void> toggleReminders(bool enabled) async {
+    if (updatingReminders) {
+      return;
+    }
+    setState(() => updatingReminders = true);
+    try {
+      if (enabled && !await reminders.requestPermission()) {
+        if (mounted) {
+          AppToast.show(context, 'Hãy cho phép thông báo và nhắc đúng giờ');
+        }
+        return;
+      }
+      await reminders.sync(orders, enabled: enabled);
+      await widget.repository.setRemindersEnabled(enabled);
+      if (mounted) {
+        setState(() => remindersEnabled = enabled);
+      }
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, 'Không thể thay đổi nhắc việc');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => updatingReminders = false);
+      }
+    }
+  }
+
+  Future<void> changeThemeMode(
+    ValueNotifier<ThemeMode> notifier,
+    ThemeMode mode,
+  ) async {
+    final previous = notifier.value;
+    notifier.value = mode;
+    try {
+      await widget.repository.setThemePreference(mode.name);
+    } catch (_) {
+      notifier.value = previous;
+      if (mounted) {
+        AppToast.show(context, 'Không thể lưu giao diện');
+      }
+    }
+  }
+
+  Future<void> toggleLiveActivity(bool enabled) async {
+    if (updatingLiveActivity) {
+      return;
+    }
+    setState(() => updatingLiveActivity = true);
+    try {
+      if (enabled && !await liveActivity.isAvailable()) {
+        if (mounted) {
+          AppToast.show(
+            context,
+            'Live Activity cần iPhone hỗ trợ và quyền trong Cài đặt',
+          );
+        }
+        return;
+      }
+      await liveActivity.sync(orders, enabled: enabled);
+      await widget.repository.setLiveActivityEnabled(enabled);
+      if (mounted) {
+        setState(() => liveActivityEnabled = enabled);
+      }
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, 'Không thể thay đổi Live Activity');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => updatingLiveActivity = false);
       }
     }
   }
@@ -168,6 +390,7 @@ class _FlowerHomeState extends State<FlowerHome> {
       ),
     );
     if (saved ?? false) {
+      HapticFeedback.mediumImpact();
       await refresh();
     }
   }
@@ -187,23 +410,26 @@ class _FlowerHomeState extends State<FlowerHome> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(
-        tab == 0
-            ? 'Tiệm Hoa'
-            : ['Lịch giao', 'Đơn hàng', 'Thống kê', 'Cá nhân'][tab],
-      ),
-    ),
+    extendBody: true,
+    appBar: tab == 0
+        ? null
+        : AppBar(
+            title: Text(['Lịch giao', 'Đơn hàng', 'Thống kê', 'Cá nhân'][tab]),
+          ),
     body: loading
-        ? const Center(child: CircularProgressIndicator())
+        ? (tab == 0
+              ? const SafeArea(child: CalendarSkeleton())
+              : const Center(child: CircularProgressIndicator()))
         : error != null
-        ? Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(error!),
-                TextButton(onPressed: refresh, child: const Text('Thử lại')),
-              ],
+        ? SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(error!),
+                  TextButton(onPressed: refresh, child: const Text('Thử lại')),
+                ],
+              ),
             ),
           )
         : switch (tab) {
@@ -212,203 +438,327 @@ class _FlowerHomeState extends State<FlowerHome> {
             2 => _statsView(),
             _ => _profileView(),
           },
-    floatingActionButton: tab <= 1
-        ? Opacity(
-            opacity: tab == 0 && selectedDayIsPast ? 0.4 : 1,
-            child: FloatingActionButton.extended(
-              onPressed: tab == 0 && selectedDayIsPast ? null : createOrder,
-              icon: const Icon(Icons.add),
-              label: const Text('Tạo đơn'),
-            ),
-          )
-        : null,
-    bottomNavigationBar: SafeArea(
-      top: false,
-      child: NavigationBar(
-        height: 72,
-        selectedIndex: tab,
-        onDestinationSelected: (value) => setState(() => tab = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label: 'Lịch',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: 'Đơn hàng',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Thống kê',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Cá nhân',
-          ),
-        ],
-      ),
+    bottomNavigationBar: FlowerDock(
+      selectedIndex: tab,
+      onSelected: changeTab,
+      onCreate: tab == 0 && selectedDayIsPast ? null : createOrder,
+      items: const [
+        FlowerDockItem(
+          icon: Icons.calendar_month_outlined,
+          selectedIcon: Icons.calendar_month,
+          label: 'Lịch',
+        ),
+        FlowerDockItem(
+          icon: Icons.receipt_long_outlined,
+          selectedIcon: Icons.receipt_long,
+          label: 'Đơn hàng',
+        ),
+        FlowerDockItem(
+          icon: Icons.bar_chart_outlined,
+          selectedIcon: Icons.bar_chart,
+          label: 'Thống kê',
+        ),
+        FlowerDockItem(
+          icon: Icons.person_outline,
+          selectedIcon: Icons.person,
+          label: 'Cá nhân',
+        ),
+      ],
     ),
   );
 
   Widget _calendarView() {
+    final now = DateTime.now();
+    final today = DateUtils.dateOnly(now);
+    final day = DateUtils.dateOnly(selected);
     final active = orders
         .where((o) => o.status != OrderStatus.cancelled)
         .toList();
-    final selectedOrders = active
-        .where((o) => DateUtils.isSameDay(o.deliveryAt, selected))
-        .toList();
+    final byDay = groupByDeliveryDay(active);
+    final selectedOrders = byDay[day] ?? const <FlowerOrder>[];
     final summary = summarizeOrders(active, deliveryMonth: month);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 110),
-      children: [
-        TemplateSectionHeading(
-          eyebrow: 'TỔNG QUAN',
-          title: 'Lịch giao tháng ${month.month}',
-        ),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            Expanded(
-              child: _metric(
-                'Doanh thu dự kiến',
-                money(summary.projectedRevenue),
-                Icons.local_florist_outlined,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _metric(
-                'Đơn trong tháng',
-                '${summary.orderCount}',
-                Icons.inventory_2_outlined,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => changeMonth(-1),
-                      icon: const Icon(Icons.chevron_left),
-                    ),
-                    Expanded(
-                      child: Text(
-                        DateFormat('MMMM yyyy', 'vi').format(month),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => changeMonth(1),
-                      icon: const Icon(Icons.chevron_right),
-                    ),
-                  ],
-                ),
-                _calendarGrid(active),
-              ],
+    final previous = summarizeOrders(
+      active,
+      deliveryMonth: DateTime(month.year, month.month - 1),
+    );
+    final todayOrders = byDay[today] ?? const <FlowerOrder>[];
+    final openToday = todayOrders.where(isUnfinished).length;
+    final attention = ordersNeedingAttention(active, now);
+    final overdueCount = attention.where((o) => isOverdue(o, now)).length;
+    final occasion = currentOccasion(now);
+    final dayEyebrow = DateUtils.isSameDay(day, today)
+        ? 'HÔM NAY'
+        : DateFormat('EEEE', 'vi').format(day).toUpperCase();
+    return CustomScrollView(
+      slivers: [
+        SliverAppBar(
+          pinned: true,
+          toolbarHeight: 76,
+          centerTitle: false,
+          titleSpacing: 20,
+          backgroundColor: context.palette.canvas,
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0.5,
+          shadowColor: context.palette.line,
+          title: Text(
+            'Tiệm Hoa',
+            style: TextStyle(
+              fontFamily: FlowerTemplateTheme.headingFont,
+              fontSize: 30,
+              fontWeight: FontWeight.w700,
+              color: context.palette.ink,
             ),
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Đơn cần chú ý',
+              onPressed: () => _showAttention(attention, now),
+              icon: Badge(
+                isLabelVisible: attention.isNotEmpty,
+                backgroundColor: context.palette.adapt(calendarOverdueColor),
+                label: Text('${attention.length}'),
+                child: const Icon(Icons.notifications_none),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
         ),
-        const SizedBox(height: 18),
-        TemplateSectionHeading(
-          eyebrow: 'ĐƠN THEO NGÀY',
-          title: 'Lịch giao ${dayLabel(selected)}',
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 120),
+          sliver: SliverList.list(
+            children: [
+              Text(
+                '${greetingFor(now)} ${occasion == null ? '🌷' : occasionStyle(occasion.occasion).emoji}',
+                style: TextStyle(
+                  color: occasion == null
+                      ? context.palette.accent
+                      : context.palette.adapt(
+                          occasionStyle(occasion.occasion).color,
+                        ),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                [
+                  if (openToday == 0)
+                    'Hôm nay chưa có đơn cần giao'
+                  else
+                    'Hôm nay có $openToday đơn cần giao',
+                  if (overdueCount > 0) '$overdueCount đơn quá hạn',
+                ].join(' · '),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: overdueCount > 0
+                      ? context.palette.adapt(calendarOverdueColor)
+                      : context.palette.muted,
+                ),
+              ),
+              if (occasion != null) ...[
+                const SizedBox(height: 12),
+                OccasionBanner(window: occasion),
+              ],
+              const SizedBox(height: 14),
+              DeliveryCalendar(
+                month: month,
+                selected: day,
+                today: today,
+                ordersByDay: byDay,
+                onSelect: selectDay,
+                onShift: shiftCalendar,
+                onOpenOrder: showOrder,
+              ),
+              const SizedBox(height: 22),
+              TemplateSectionHeading(
+                eyebrow: dayEyebrow,
+                title: 'Lịch giao ${dayLabel(day)}',
+                trailing: selectedOrders.isEmpty
+                    ? null
+                    : Text(
+                        '${selectedOrders.length} đơn',
+                        style: TextStyle(color: context.palette.muted),
+                      ),
+              ),
+              const SizedBox(height: 12),
+              if (selectedOrders.isEmpty)
+                _dayEmpty(past: day.isBefore(today))
+              else
+                ...selectedOrders.map(_swipeableOrderCard),
+              const SizedBox(height: 14),
+              TemplateSectionHeading(
+                eyebrow: 'TỔNG QUAN',
+                title: monthTitle(month),
+              ),
+              const SizedBox(height: 12),
+              OverviewBento(
+                month: month,
+                summary: summary,
+                previousSummary: previous,
+                todayCount: todayOrders.length,
+                todayOpen: openToday,
+                money: money,
+                weekly: weeklyRevenue(active, month),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 14),
-        if (selectedOrders.isEmpty)
-          _empty('Chưa có đơn giao trong ngày này')
-        else
-          ...selectedOrders.map(_orderCard),
       ],
     );
   }
 
-  Widget _calendarGrid(List<FlowerOrder> active) {
-    final firstWeekday = DateTime(month.year, month.month).weekday - 1;
-    final days = DateTime(month.year, month.month + 1, 0).day;
-    return Column(
+  Widget _dayEmpty({required bool past}) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: context.palette.line),
+    ),
+    child: Column(
       children: [
-        Row(
+        const TemplateIconBadge(icon: Icons.local_florist_outlined, size: 40),
+        const SizedBox(height: 10),
+        Text(
+          past
+              ? 'Ngày này không có đơn giao'
+              : 'Chưa có đơn giao trong ngày này',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.palette.muted),
+        ),
+        if (!past) ...[
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: createOrder,
+            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 42)),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Tạo đơn cho ngày này'),
+          ),
+        ],
+      ],
+    ),
+  );
+
+  Future<void> _showAttention(
+    List<FlowerOrder> attention,
+    DateTime now,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final day in ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'])
-              Expanded(
-                child: Center(
-                  child: Text(day, style: const TextStyle(color: _sage)),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                'Đơn cần chú ý',
+                style: TextStyle(
+                  fontFamily: FlowerTemplateTheme.headingFont,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            if (attention.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 8, 20, 24),
+                child: Text('Không có đơn nào cần chú ý 🌷'),
+              )
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final order in attention)
+                      ListTile(
+                        leading: Icon(
+                          isOverdue(order, now)
+                              ? Icons.warning_amber_rounded
+                              : Icons.schedule,
+                          color: isOverdue(order, now)
+                              ? context.palette.adapt(calendarOverdueColor)
+                              : _statusColorOf(context, order.status),
+                        ),
+                        title: Text(
+                          '${order.customerName} · ${order.productName}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${isOverdue(order, now) ? 'Quá hạn' : 'Hôm nay'} · '
+                          '${DateFormat('HH:mm dd/MM', 'vi').format(order.deliveryAt)} · '
+                          '${order.status.label}',
+                        ),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          showOrder(order);
+                        },
+                      ),
+                  ],
                 ),
               ),
           ],
         ),
-        const SizedBox(height: 8),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 7,
-            mainAxisSpacing: 4,
-          ),
-          itemCount: firstWeekday + days,
-          itemBuilder: (_, index) {
-            final day = index - firstWeekday + 1;
-            if (day < 1) {
-              return const SizedBox.shrink();
-            }
-            final date = DateTime(month.year, month.month, day);
-            final hasOrder = active.any(
-              (o) => DateUtils.isSameDay(o.deliveryAt, date),
-            );
-            final chosen = DateUtils.isSameDay(selected, date);
-            return Opacity(
-              opacity: date.isBefore(DateUtils.dateOnly(DateTime.now()))
-                  ? 0.35
-                  : 1,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(40),
-                onTap: () => setState(() => selected = date),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: chosen ? FlowerTemplateTheme.hydrangea : null,
-                    borderRadius: BorderRadius.circular(40),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '$day',
-                        style: TextStyle(
-                          color: chosen ? FlowerTemplateTheme.navy : _ink,
-                          fontWeight: chosen ? FontWeight.bold : null,
-                        ),
-                      ),
-                      if (hasOrder)
-                        Container(
-                          width: 5,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: chosen ? FlowerTemplateTheme.navy : _rose,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
+      ),
+    ),
+  );
+
+  Future<void> advanceStatus(FlowerOrder order, OrderStatus next) async {
+    try {
+      await widget.repository.updateStatus(order, next);
+      HapticFeedback.mediumImpact();
+      if (mounted) {
+        AppToast.show(context, 'Đơn #${order.id}: ${next.label}');
+      }
+      await refresh();
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, 'Không thể cập nhật trạng thái');
+      }
+    }
+  }
+
+  Widget _swipeableOrderCard(FlowerOrder order) {
+    final card = _orderCard(order);
+    final next = nextForwardStatus(order.status);
+    if (next == null || order.id == null) {
+      return card;
+    }
+    final color = _statusColorOf(context, next);
+    return Dismissible(
+      key: ValueKey('swipe-${order.id}-${order.status.index}'),
+      direction: DismissDirection.startToEnd,
+      dismissThresholds: const {DismissDirection.startToEnd: 0.4},
+      confirmDismiss: (_) async {
+        await advanceStatus(order, next);
+        return false;
+      },
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(16),
         ),
-      ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.arrow_forward, color: color),
+            const SizedBox(width: 8),
+            Text(
+              'Chuyển sang "${next.label}"',
+              style: TextStyle(color: color, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
+      child: card,
     );
   }
 
@@ -420,14 +770,14 @@ class _FlowerHomeState extends State<FlowerHome> {
       deliveryDay: orderDayFilter,
     );
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 110),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
       children: [
         TemplateSectionHeading(
           eyebrow: 'QUẢN LÝ',
           title: 'Đơn hàng của bạn',
           trailing: Text(
             '${visible.length} đơn',
-            style: const TextStyle(color: _sage),
+            style: TextStyle(color: context.palette.muted),
           ),
         ),
         const SizedBox(height: 18),
@@ -482,36 +832,91 @@ class _FlowerHomeState extends State<FlowerHome> {
                 : 'Không có đơn phù hợp',
           )
         else
-          ...visible.map(_orderCard),
+          ...visible.map(_swipeableOrderCard),
       ],
     );
   }
 
   Widget _statsView() {
-    final summary = summarizeOrders(orders);
+    final report = calculateBusinessStats(orders, statsPayments, statsWindow);
+    final biggestBucket = report.buckets.fold<int>(
+      0,
+      (value, bucket) => bucket.revenue > value ? bucket.revenue : value,
+    );
+    const weekdays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
       children: [
         const TemplateSectionHeading(
           eyebrow: 'HIỆU QUẢ KINH DOANH',
-          title: 'Tất cả đơn hàng',
+          title: 'Thống kê cửa hàng',
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final period in StatsPeriod.values)
+              ChoiceChip(
+                label: Text(switch (period) {
+                  StatsPeriod.week => 'Tuần',
+                  StatsPeriod.month => 'Tháng',
+                  StatsPeriod.quarter => 'Quý',
+                  StatsPeriod.year => 'Năm',
+                }),
+                selected: statsWindow.period == period,
+                onSelected: (_) => selectStatsPeriod(period),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'Kỳ trước',
+              onPressed: () =>
+                  setState(() => statsWindow = statsWindow.shift(-1)),
+              icon: const Icon(Icons.chevron_left),
+            ),
+            Expanded(
+              child: Text(
+                _statsWindowLabel(statsWindow),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Kỳ sau',
+              onPressed: () =>
+                  setState(() => statsWindow = statsWindow.shift(1)),
+              icon: const Icon(Icons.chevron_right),
+            ),
+          ],
+        ),
+        if (statsLoading) const LinearProgressIndicator(),
+        if (statsError != null)
+          TextButton(
+            onPressed: loadStatsPayments,
+            child: Text('$statsError · Thử lại'),
+          ),
+        const SizedBox(height: 16),
         Row(
           children: [
             Expanded(
               child: _metric(
-                'Doanh thu dự kiến',
-                money(summary.projectedRevenue),
-                Icons.spa_outlined,
+                'Doanh thu đã giao',
+                money(report.deliveredRevenue),
+                Icons.check_circle_outline,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _metric(
-                'Đã thu',
-                money(summary.paid),
-                Icons.check_circle_outline,
+                'Giá trị đơn trong kỳ',
+                money(report.bookedRevenue),
+                Icons.spa_outlined,
               ),
             ),
           ],
@@ -520,32 +925,137 @@ class _FlowerHomeState extends State<FlowerHome> {
           children: [
             Expanded(
               child: _metric(
-                'Còn phải thu',
-                money(summary.remaining),
+                'Tiền thu ròng',
+                money(report.netCash),
                 Icons.payments_outlined,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _metric(
-                'Đơn chưa giao',
-                '${summary.pendingCount}',
+                'Còn phải thu',
+                money(report.outstanding),
                 Icons.local_shipping_outlined,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        const Text(
-          'Số liệu tính từ đơn chưa hủy. Doanh thu dự kiến gồm cả đơn chưa giao.',
-          style: TextStyle(color: _sage),
+        const SizedBox(height: 8),
+        Text(
+          '${report.orderCount} đơn · ${report.deliveredCount} đã giao · ${report.pendingCount} chưa giao',
+          style: TextStyle(color: context.palette.muted),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Đã thu ${money(report.receipts)} · Hoàn ${money(report.refunds)}',
+          style: TextStyle(color: context.palette.muted),
+        ),
+        if (report.orderCount == 0 &&
+            report.receipts == 0 &&
+            report.refunds == 0)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: Text('Chưa có đơn hoặc giao dịch trong kỳ này.'),
+          ),
+        const SizedBox(height: 20),
+        const TemplateSectionHeading(title: 'Doanh thu đã giao'),
+        const SizedBox(height: 8),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                for (final bucket in report.buckets)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 56, child: Text(bucket.label)),
+                        Expanded(
+                          child: LinearProgressIndicator(
+                            value: biggestBucket == 0
+                                ? 0
+                                : bucket.revenue / biggestBucket,
+                            minHeight: 9,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 84,
+                          child: Text(
+                            money(bucket.revenue),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const TemplateSectionHeading(title: 'Khách và sản phẩm'),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.people_outline),
+                title: const Text('Khách quay lại'),
+                subtitle: const Text(
+                  'Từ 2 đơn chưa hủy cùng tên và số điện thoại',
+                ),
+                trailing: Text('${report.repeatCustomers}'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.calendar_today_outlined),
+                title: const Text('Ngày và buổi đông đơn'),
+                subtitle: Text(
+                  report.busiestWeekday == null
+                      ? 'Chưa có đơn trong kỳ'
+                      : '${weekdays[report.busiestWeekday! - 1]} · ${report.busiestDaypart}',
+                ),
+              ),
+              const ListTile(
+                leading: Icon(Icons.local_florist_outlined),
+                title: Text('Mẫu hoa bán chạy'),
+                subtitle: Text('Theo số lượng trong đơn đã giao'),
+              ),
+              if (report.topProducts.isEmpty)
+                const ListTile(title: Text('Chưa có sản phẩm đã giao trong kỳ'))
+              else
+                for (final (index, product) in report.topProducts.indexed)
+                  ListTile(
+                    leading: Text('${index + 1}.'),
+                    title: Text(product.name),
+                    trailing: Text('${product.quantity}'),
+                  ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          'Doanh thu theo ngày giao của đơn đã giao. Tiền thu và hoàn theo ngày giao dịch; giá trị đơn và công nợ theo ngày giao, không tính đơn hủy.',
+          style: TextStyle(color: context.palette.muted),
         ),
       ],
     );
   }
 
+  String _statsWindowLabel(StatsWindow window) => switch (window.period) {
+    StatsPeriod.week =>
+      '${dayLabel(window.start)} – ${dayLabel(window.end.subtract(const Duration(days: 1)))}',
+    StatsPeriod.month => 'Tháng ${window.start.month}/${window.start.year}',
+    StatsPeriod.quarter =>
+      'Quý ${((window.start.month - 1) ~/ 3) + 1}/${window.start.year}',
+    StatsPeriod.year => 'Năm ${window.start.year}',
+  };
+
   Widget _profileView() => ListView(
-    padding: const EdgeInsets.all(24),
+    padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
     children: [
       const Center(
         child: TemplateIconBadge(icon: Icons.local_florist, size: 72),
@@ -563,6 +1073,85 @@ class _FlowerHomeState extends State<FlowerHome> {
         ),
       ),
       const SizedBox(height: 22),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.storefront_outlined),
+          title: const Text('Hồ sơ shop & tài khoản'),
+          subtitle: const Text('Thông tin hóa đơn và ảnh QR ngân hàng'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => ShopProfileScreen(repository: widget.repository),
+            ),
+          ),
+        ),
+      ),
+      if (widget.themeMode case final notifier?)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.palette_outlined),
+                    SizedBox(width: 16),
+                    Text('Giao diện'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ValueListenableBuilder<ThemeMode>(
+                  valueListenable: notifier,
+                  builder: (context, mode, _) => SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<ThemeMode>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: ThemeMode.system,
+                          label: Text('Theo máy'),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.light,
+                          icon: Icon(Icons.light_mode_outlined),
+                          label: Text('Sáng'),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.dark,
+                          icon: Icon(Icons.dark_mode_outlined),
+                          label: Text('Tối'),
+                        ),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (value) =>
+                          changeThemeMode(notifier, value.single),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      Card(
+        child: SwitchListTile(
+          secondary: const Icon(Icons.notifications_active_outlined),
+          title: const Text('Nhắc việc'),
+          subtitle: const Text('Trước giờ giao, quá giờ giao và công nợ'),
+          value: remindersEnabled,
+          onChanged: updatingReminders ? null : toggleReminders,
+        ),
+      ),
+      if (Platform.isIOS)
+        Card(
+          child: SwitchListTile(
+            secondary: const Icon(Icons.delivery_dining_outlined),
+            title: const Text('Live Activity'),
+            subtitle: const Text('iOS 16.2+ · Đơn đang giao trên màn khóa'),
+            value: liveActivityEnabled,
+            onChanged: updatingLiveActivity ? null : toggleLiveActivity,
+          ),
+        ),
       Card(
         child: ListTile(
           leading: const Icon(Icons.people_outline),
@@ -615,7 +1204,7 @@ class _FlowerHomeState extends State<FlowerHome> {
         child: ListTile(
           leading: Icon(Icons.info_outline),
           title: Text('Phiên bản đầu'),
-          subtitle: Text('Hóa đơn, nhắc việc và đồng bộ sẽ được bổ sung sau.'),
+          subtitle: Text('Sao lưu và đồng bộ nhiều máy sẽ được bổ sung sau.'),
         ),
       ),
     ],
@@ -633,17 +1222,17 @@ class _FlowerHomeState extends State<FlowerHome> {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: _ink,
+              color: context.palette.ink,
             ),
           ),
           const SizedBox(height: 5),
           Text(
             title,
             maxLines: 2,
-            style: const TextStyle(color: _sage, fontSize: 12),
+            style: TextStyle(color: context.palette.muted, fontSize: 12),
           ),
         ],
       ),
@@ -661,7 +1250,7 @@ class _FlowerHomeState extends State<FlowerHome> {
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            CatalogProductImage(path: _orderThumbnail(order), size: 80),
+            CatalogProductImage(path: orderThumbnail(order), size: 80),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -683,7 +1272,10 @@ class _FlowerHomeState extends State<FlowerHome> {
                     '${order.customerName} · ${DateFormat('HH:mm dd/MM', 'vi').format(order.deliveryAt)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: _sage, fontSize: 11),
+                    style: TextStyle(
+                      color: context.palette.muted,
+                      fontSize: 11,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -694,7 +1286,8 @@ class _FlowerHomeState extends State<FlowerHome> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: _statusColor(
+                          color: _statusColorOf(
+                            context,
                             order.status,
                           ).withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(20),
@@ -702,7 +1295,7 @@ class _FlowerHomeState extends State<FlowerHome> {
                         child: Text(
                           order.status.label,
                           style: TextStyle(
-                            color: _statusColor(order.status),
+                            color: _statusColorOf(context, order.status),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                           ),
@@ -711,10 +1304,10 @@ class _FlowerHomeState extends State<FlowerHome> {
                       const Spacer(),
                       Text(
                         money(order.total),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: _ink,
+                          color: context.palette.ink,
                         ),
                       ),
                     ],
@@ -914,7 +1507,6 @@ class OrderDetailScreen extends StatefulWidget {
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
   late FlowerOrder order = widget.order;
   bool saving = false;
-  int _statusMenuRevision = 0;
 
   Future<void> _editOrder() async {
     final changed = await Navigator.of(context).push<bool>(
@@ -938,11 +1530,175 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     await widget.onChanged();
   }
 
+  static const _statusFlow = [
+    OrderStatus.newOrder,
+    OrderStatus.making,
+    OrderStatus.awaitingApproval,
+    OrderStatus.delivering,
+    OrderStatus.delivered,
+  ];
+
+  Future<void> changeStatus(OrderStatus status) async {
+    if (saving || status == order.status) {
+      return;
+    }
+    if (status == OrderStatus.cancelled) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Hủy đơn hàng?'),
+          content: Text(
+            order.paid > 0
+                ? 'Đơn hủy sẽ không tính vào doanh thu dự kiến. Đã thu ${money(order.paid)}; hãy hoàn tiền nếu cần.'
+                : 'Đơn hủy sẽ không tính vào doanh thu dự kiến.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Giữ đơn'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Hủy đơn'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) {
+        return;
+      }
+    }
+    setState(() => saving = true);
+    try {
+      await widget.repository.updateStatus(order, status);
+      HapticFeedback.mediumImpact();
+      setState(() => order = order.copyWith(status: status));
+      await widget.onChanged();
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, 'Không thể cập nhật trạng thái');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => saving = false);
+      }
+    }
+  }
+
+  Widget _statusCard() {
+    final palette = context.palette;
+    final cancelled = order.status == OrderStatus.cancelled;
+    final next = nextForwardStatus(order.status);
+    final canCancel = order.status.allowedNext.contains(OrderStatus.cancelled);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'TRẠNG THÁI',
+                  style: TextStyle(
+                    color: palette.accent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  order.status.label,
+                  style: TextStyle(
+                    color: _statusColorOf(context, order.status),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Opacity(
+              opacity: cancelled ? 0.45 : 1,
+              child: StepProgressBar(
+                current: cancelled ? -1 : _statusFlow.indexOf(order.status),
+                allDone: order.status == OrderStatus.delivered,
+                semanticsPrefix: 'Tiến trình đơn',
+                steps: [
+                  for (final status in _statusFlow)
+                    StepItem(
+                      icon: _statusIcon(status),
+                      label: status.label,
+                      color: _statusColor(status),
+                    ),
+                ],
+              ),
+            ),
+            if (cancelled) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.cancel_outlined, size: 18, color: palette.muted),
+                  const SizedBox(width: 6),
+                  Text('Đơn đã hủy', style: TextStyle(color: palette.muted)),
+                ],
+              ),
+            ],
+            if (next != null) ...[
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: saving ? null : () => changeStatus(next),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _statusColorOf(context, next),
+                    foregroundColor: palette.isDark
+                        ? palette.canvas
+                        : Colors.white,
+                    minimumSize: const Size(0, 50),
+                  ),
+                  icon: Icon(_statusIcon(next), size: 20),
+                  label: Text('Chuyển sang: ${next.label}'),
+                ),
+              ),
+            ],
+            if (canCancel)
+              Center(
+                child: TextButton(
+                  onPressed: saving
+                      ? null
+                      : () => changeStatus(OrderStatus.cancelled),
+                  style: TextButton.styleFrom(
+                    foregroundColor: palette.adapt(calendarOverdueColor),
+                  ),
+                  child: const Text('Hủy đơn'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text('Đơn #${order.id}'),
       actions: [
+        IconButton(
+          tooltip: 'Hóa đơn',
+          onPressed: saving
+              ? null
+              : () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => InvoiceScreen(
+                      order: order,
+                      repository: widget.repository,
+                    ),
+                  ),
+                ),
+          icon: const Icon(Icons.receipt_long_outlined),
+        ),
         IconButton(
           tooltip: 'Sửa đơn',
           onPressed: saving ? null : _editOrder,
@@ -966,7 +1722,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               children: [
                 Row(
                   children: [
-                    CatalogProductImage(path: _orderThumbnail(order), size: 88),
+                    CatalogProductImage(path: orderThumbnail(order), size: 88),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -986,8 +1742,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           const SizedBox(height: 6),
                           Text(
                             order.status.label,
-                            style: const TextStyle(
-                              color: _rose,
+                            style: TextStyle(
+                              color: context.palette.primary,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -1032,6 +1788,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ),
         ),
         const SizedBox(height: 12),
+        _statusCard(),
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -1051,6 +1809,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ),
         ),
         OrderMediaSection(orderId: order.id!, repository: widget.repository),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: saving
+              ? null
+              : () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => InvoiceScreen(
+                      order: order,
+                      repository: widget.repository,
+                    ),
+                  ),
+                ),
+          icon: const Icon(Icons.receipt_long_outlined),
+          label: const Text('Xem và chia sẻ hóa đơn'),
+        ),
         const SizedBox(height: 12),
         Wrap(
           spacing: 8,
@@ -1104,72 +1877,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             );
           },
         ),
-        const SizedBox(height: 20),
-        DropdownButtonFormField<OrderStatus>(
-          key: ValueKey('${order.status.index}-$_statusMenuRevision'),
-          initialValue: order.status,
-          decoration: const InputDecoration(labelText: 'Trạng thái'),
-          items: [order.status, ...order.status.allowedNext]
-              .map(
-                (status) =>
-                    DropdownMenuItem(value: status, child: Text(status.label)),
-              )
-              .toList(),
-          onChanged: saving
-              ? null
-              : (status) async {
-                  if (status == null || status == order.status) {
-                    return;
-                  }
-                  if (status == OrderStatus.cancelled) {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (dialogContext) => AlertDialog(
-                        title: const Text('Hủy đơn hàng?'),
-                        content: Text(
-                          order.paid > 0
-                              ? 'Đơn hủy sẽ không tính vào doanh thu dự kiến. Đã thu ${money(order.paid)}; hãy hoàn tiền nếu cần.'
-                              : 'Đơn hủy sẽ không tính vào doanh thu dự kiến.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.pop(dialogContext, false),
-                            child: const Text('Giữ đơn'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(dialogContext, true),
-                            child: const Text('Hủy đơn'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirmed != true || !mounted) {
-                      if (mounted) {
-                        setState(() => _statusMenuRevision++);
-                      }
-                      return;
-                    }
-                  }
-                  setState(() => saving = true);
-                  try {
-                    await widget.repository.updateStatus(order, status);
-                    setState(() => order = order.copyWith(status: status));
-                    await widget.onChanged();
-                  } catch (_) {
-                    if (mounted) {
-                      setState(() => _statusMenuRevision++);
-                    }
-                    if (context.mounted) {
-                      AppToast.show(context, 'Không thể cập nhật trạng thái');
-                    }
-                  } finally {
-                    if (mounted) {
-                      setState(() => saving = false);
-                    }
-                  }
-                },
-        ),
         const SizedBox(height: 16),
         FutureBuilder<List<StatusEntry>>(
           future: widget.repository.statusHistory(order.id!),
@@ -1190,7 +1897,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     for (final entry in snapshot.data!)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.history, color: _sage),
+                        leading: Icon(
+                          Icons.history,
+                          color: context.palette.muted,
+                        ),
                         title: Text(entry.status.label),
                         subtitle: Text(
                           DateFormat(
@@ -1225,7 +1935,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     for (final change in snapshot.data!)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.edit_note, color: _sage),
+                        leading: Icon(
+                          Icons.edit_note,
+                          color: context.palette.muted,
+                        ),
                         title: Text(change.details),
                         subtitle: Text(
                           DateFormat(
@@ -1282,7 +1995,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       children: [
         SizedBox(
           width: 105,
-          child: Text(label, style: const TextStyle(color: _sage)),
+          child: Text(label, style: TextStyle(color: context.palette.muted)),
         ),
         Expanded(
           child: Text(
@@ -1376,19 +2089,35 @@ class CreateOrderScreen extends StatefulWidget {
     required this.repository,
     this.initialOrder,
     this.deliveryDay,
+    this.addressSuggester,
+    this.contactPicker = pickSystemContact,
   });
   final OrderRepository repository;
   final FlowerOrder? initialOrder;
   final DateTime? deliveryDay;
+
+  /// Map suggestions for the delivery address; defaults to Goong when the
+  /// build has a `GOONG_API_KEY`, otherwise the field is manual only.
+  final AddressSuggester? addressSuggester;
+
+  /// Fills the customer step from the phone's address book.
+  final ContactPicker contactPicker;
   @override
   State<CreateOrderScreen> createState() => _CreateOrderScreenState();
 }
 
 class _CreateOrderScreenState extends State<CreateOrderScreen> {
+  late final AddressSuggester? _addressSuggester =
+      widget.addressSuggester ?? GoongAddressSuggester.fromEnvironment();
   final name = TextEditingController();
   final phone = TextEditingController();
   final product = TextEditingController();
   final price = TextEditingController();
+  final productFocus = FocusNode();
+  final priceFocus = FocusNode();
+
+  /// Quantity for the manual product being typed, shown before it is added.
+  int manualQuantity = 1;
   final shipping = TextEditingController(text: '0');
   final paid = TextEditingController(text: '0');
   final address = TextEditingController();
@@ -1476,6 +2205,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         name.text = draft['name'] as String? ?? '';
         phone.text = draft['phone'] as String? ?? '';
         product.text = draft['product'] as String? ?? '';
+        manualQuantity = ((draft['manualQuantity'] as int?) ?? 1).clamp(1, 999);
         price.text = _formattedDraftMoney(draft['price'] as String? ?? '');
         shipping.text = _formattedDraftMoney(
           draft['shipping'] as String? ?? '0',
@@ -1522,6 +2252,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     'name': name.text,
     'phone': phone.text,
     'product': product.text,
+    'manualQuantity': manualQuantity,
     'price': price.text,
     'shipping': shipping.text,
     'paid': paid.text,
@@ -1607,6 +2338,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     _draftTimer?.cancel();
     _clockTimer?.cancel();
     _saveDraft();
+    productFocus.dispose();
+    priceFocus.dispose();
     for (final c in [
       name,
       phone,
@@ -1633,7 +2366,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   int get itemsPrice => orderItemsTotal(selectedItems);
 
-  void addManualProduct() {
+  void addManualProduct({bool focusNext = false}) {
     final title = product.text.trim();
     final amount = parseMoney(price.text) ?? 0;
     if (title.isEmpty || amount <= 0) {
@@ -1646,12 +2379,61 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           name: title,
           unitPrice: amount,
           components: List.of(components),
-        ),
+        ).withQuantity(manualQuantity),
       );
       product.clear();
       price.clear();
       components = [];
+      manualQuantity = 1;
     });
+    _scheduleDraftSave();
+    if (focusNext) {
+      _focusTextField(productFocus);
+    }
+  }
+
+  /// Moves focus to a text field and makes sure the keyboard switches back
+  /// from a numeric layout: some Android keyboards keep the previous input
+  /// type when focus jumps between fields, so close the input connection
+  /// first and reopen it on the next frame.
+  void _focusTextField(FocusNode node) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && node.canRequestFocus) {
+        node.requestFocus();
+      }
+    });
+  }
+
+  Future<void> pickFromContacts() async {
+    final PickedContact? contact;
+    try {
+      contact = await widget.contactPicker();
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, 'Không mở được danh bạ');
+      }
+      return;
+    }
+    if (contact == null || !mounted) {
+      return;
+    }
+    if (contact.name.isEmpty && contact.phone.isEmpty) {
+      AppToast.show(context, 'Liên hệ này chưa có tên hoặc số điện thoại');
+      return;
+    }
+    setState(() {
+      if (contact!.name.isNotEmpty) {
+        name.text = contact.name;
+      }
+      phone.text = contact.phone;
+    });
+    _scheduleDraftSave();
+    AppToast.show(context, 'Đã điền thông tin từ danh bạ', isError: false);
+  }
+
+  void changeManualQuantity(int quantity) {
+    setState(() => manualQuantity = quantity.clamp(1, 999));
     _scheduleDraftSave();
   }
 
@@ -1673,6 +2455,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
     return deliveryTimeIssue(delivery);
   }
+
+  static const _reviewStep = 4;
+
+  bool get reviewing => step == _reviewStep;
 
   String? validateStep() => switch (step) {
     0 when name.text.trim().isEmpty => 'Vui lòng nhập tên khách hàng',
@@ -1719,6 +2505,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       AppToast.show(context, timeIssue);
       return;
     }
+    if (step == 3) {
+      // Nothing is saved until the shop confirms the summary.
+      setState(() => step = _reviewStep);
+      _scheduleDraftSave();
+      return;
+    }
     final order = FlowerOrder(
       id: widget.initialOrder?.id,
       customerName: name.text,
@@ -1743,6 +2535,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         await widget.repository.updateOrder(order);
       }
       _saved = true;
+      if (mounted && widget.initialOrder == null) {
+        await showOrderSuccess(context);
+      }
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -1804,9 +2599,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                               ),
                             ),
                             subtitle: Text(money(item.price)),
-                            trailing: const Icon(
+                            trailing: Icon(
                               Icons.add_circle_outline,
-                              color: _rose,
+                              color: context.palette.primary,
                             ),
                             onTap: () => Navigator.pop(sheetContext, item),
                           ),
@@ -1954,7 +2749,31 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(widget.initialOrder == null ? 'Tạo đơn hoa' : 'Sửa đơn hoa'),
+      title: Column(
+        children: [
+          Text(
+            widget.initialOrder == null ? 'Tạo đơn hoa' : 'Sửa đơn hoa',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: context.palette.muted,
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: Text(
+              [
+                'Khách hàng',
+                'Sản phẩm',
+                'Giao hàng',
+                'Thanh toán',
+                'Xác nhận đơn',
+              ][step],
+              key: ValueKey(step),
+            ),
+          ),
+        ],
+      ),
       actions: [
         if (widget.initialOrder == null && _hasDraft)
           IconButton(
@@ -1968,280 +2787,340 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Bước ${step + 1}/4',
-                  style: const TextStyle(
-                    color: _rose,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    letterSpacing: 1.2,
-                  ),
+            padding: const EdgeInsets.fromLTRB(28, 8, 28, 10),
+            child: StepProgressBar(
+              current: step,
+              allDone: reviewing,
+              semanticsPrefix: reviewing ? 'Xem lại đơn' : 'Bước ${step + 1}/4',
+              onStepTap: saving
+                  ? null
+                  : (index) {
+                      setState(() => step = index);
+                      _scheduleDraftSave();
+                    },
+              steps: const [
+                StepItem(icon: Icons.person_rounded, label: 'Khách hàng'),
+                StepItem(icon: Icons.local_florist_rounded, label: 'Sản phẩm'),
+                StepItem(
+                  icon: Icons.event_available_rounded,
+                  label: 'Giao hàng',
                 ),
-                const SizedBox(height: 10),
-                LinearProgressIndicator(
-                  value: (step + 1) / 4,
-                  minHeight: 5,
-                  backgroundColor: FlowerTemplateTheme.line,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  ['Khách hàng', 'Sản phẩm', 'Giao hàng', 'Thanh toán'][step],
-                  style: const TextStyle(
-                    fontFamily: FlowerTemplateTheme.headingFont,
-                    fontSize: 25,
-                    height: 1.3,
-                    color: _ink,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                StepItem(icon: Icons.payments_rounded, label: 'Thanh toán'),
               ],
             ),
           ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(24),
+            child: Stack(
               children: [
-                if (step == 0) ...[
-                  _field(
-                    name,
-                    'Tên khách hàng',
-                    textInputAction: TextInputAction.next,
-                  ),
-                  _field(
-                    phone,
-                    'Số điện thoại (không bắt buộc)',
-                    keyboard: TextInputType.phone,
-                    required: false,
-                  ),
-                  TextButton.icon(
-                    onPressed: () => setState(() {
-                      name.text = 'Khách vãng lai';
-                      phone.clear();
-                      _scheduleDraftSave();
-                    }),
-                    icon: const Icon(Icons.person_outline),
-                    label: const Text('Khách vãng lai'),
-                  ),
-                  if (name.text.trim().length >= 2 ||
-                      phone.text.trim().length >= 2)
-                    FutureBuilder<List<CustomerSummary>>(
-                      future: widget.repository.customers(
-                        query: phone.text.trim().length >= 2
-                            ? phone.text
-                            : name.text,
-                      ),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                          return const SizedBox.shrink();
-                        }
-                        return Card(
-                          child: Column(
-                            children: [
-                              const ListTile(
-                                title: Text('Khách đã mua'),
-                                dense: true,
-                              ),
-                              for (final customer in snapshot.data!.take(5))
-                                ListTile(
-                                  title: Text(customer.name),
-                                  subtitle: Text(
-                                    customer.phone.isEmpty
-                                        ? '${customer.orderCount} đơn'
-                                        : '${customer.phone} · ${customer.orderCount} đơn',
-                                  ),
-                                  onTap: () => setState(() {
-                                    name.text = customer.name;
-                                    phone.text = customer.phone;
-                                    _scheduleDraftSave();
-                                  }),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
+                Positioned.fill(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      24,
+                      24,
+                      24,
+                      24 + FloatingFormBar.reservedHeight,
                     ),
-                ],
-                if (step == 1) ...[
-                  OutlinedButton.icon(
-                    onPressed: chooseProduct,
-                    icon: const Icon(Icons.local_florist_outlined),
-                    label: const Text('Thêm từ mẫu hoa'),
-                  ),
-                  const SizedBox(height: 12),
-                  for (var index = 0; index < selectedItems.length; index++)
-                    Card(
-                      child: ListTile(
-                        title: Text(selectedItems[index].name),
-                        subtitle: Text(
-                          '${money(selectedItems[index].unitPrice)} × ${selectedItems[index].quantity} = ${money(selectedItems[index].total)}',
+                    children: [
+                      if (step == 0) ...[
+                        OutlinedButton.icon(
+                          onPressed: saving ? null : pickFromContacts,
+                          icon: const Icon(Icons.contacts_rounded),
+                          label: const Text('Chọn từ danh bạ'),
                         ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip:
-                                  'Giảm số lượng ${selectedItems[index].name}',
-                              onPressed: () => changeItemQuantity(
-                                index,
-                                selectedItems[index].quantity - 1,
-                              ),
-                              icon: const Icon(Icons.remove_circle_outline),
+                        const SizedBox(height: 14),
+                        _field(
+                          name,
+                          'Tên khách hàng',
+                          textInputAction: TextInputAction.next,
+                        ),
+                        _field(
+                          phone,
+                          'Số điện thoại (không bắt buộc)',
+                          keyboard: TextInputType.phone,
+                          required: false,
+                        ),
+                        TextButton.icon(
+                          onPressed: () => setState(() {
+                            name.text = 'Khách vãng lai';
+                            phone.clear();
+                            _scheduleDraftSave();
+                          }),
+                          icon: const Icon(Icons.person_outline),
+                          label: const Text('Khách vãng lai'),
+                        ),
+                        if (name.text.trim().length >= 2 ||
+                            phone.text.trim().length >= 2)
+                          FutureBuilder<List<CustomerSummary>>(
+                            future: widget.repository.customers(
+                              query: phone.text.trim().length >= 2
+                                  ? phone.text
+                                  : name.text,
                             ),
-                            Text('${selectedItems[index].quantity}'),
-                            IconButton(
-                              tooltip:
-                                  'Tăng số lượng ${selectedItems[index].name}',
-                              onPressed: () => changeItemQuantity(
-                                index,
-                                selectedItems[index].quantity + 1,
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return Card(
+                                child: Column(
+                                  children: [
+                                    const ListTile(
+                                      title: Text('Khách đã mua'),
+                                      dense: true,
+                                    ),
+                                    for (final customer in snapshot.data!.take(
+                                      5,
+                                    ))
+                                      ListTile(
+                                        title: Text(customer.name),
+                                        subtitle: Text(
+                                          customer.phone.isEmpty
+                                              ? '${customer.orderCount} đơn'
+                                              : '${customer.phone} · ${customer.orderCount} đơn',
+                                        ),
+                                        onTap: () => setState(() {
+                                          name.text = customer.name;
+                                          phone.text = customer.phone;
+                                          _scheduleDraftSave();
+                                        }),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                      if (step == 1) ...[
+                        OutlinedButton.icon(
+                          onPressed: chooseProduct,
+                          icon: const Icon(Icons.local_florist_outlined),
+                          label: const Text('Thêm từ mẫu hoa'),
+                        ),
+                        const SizedBox(height: 12),
+                        for (
+                          var index = 0;
+                          index < selectedItems.length;
+                          index++
+                        )
+                          Card(
+                            child: ListTile(
+                              title: Text(selectedItems[index].name),
+                              subtitle: Text(
+                                '${money(selectedItems[index].unitPrice)} × ${selectedItems[index].quantity} = ${money(selectedItems[index].total)}',
                               ),
-                              icon: const Icon(Icons.add_circle_outline),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip:
+                                        'Giảm số lượng ${selectedItems[index].name}',
+                                    onPressed: () => changeItemQuantity(
+                                      index,
+                                      selectedItems[index].quantity - 1,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.remove_circle_outline,
+                                    ),
+                                  ),
+                                  Text('${selectedItems[index].quantity}'),
+                                  IconButton(
+                                    tooltip:
+                                        'Tăng số lượng ${selectedItems[index].name}',
+                                    onPressed: () => changeItemQuantity(
+                                      index,
+                                      selectedItems[index].quantity + 1,
+                                    ),
+                                    icon: const Icon(Icons.add_circle_outline),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (selectedItems.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Text(
+                              'Tiền sản phẩm: ${money(itemsPrice)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        _field(
+                          product,
+                          'Tên sản phẩm thêm thủ công',
+                          onChanged: (_) => components = [],
+                          required: selectedItems.isEmpty,
+                          focusNode: productFocus,
+                          textInputAction: TextInputAction.next,
+                          onSubmitted: (_) => priceFocus.requestFocus(),
+                          onTap: () {
+                            // Coming from the numeric price field: reopen the
+                            // keyboard so it switches back to letters.
+                            if (!productFocus.hasFocus && priceFocus.hasFocus) {
+                              _focusTextField(productFocus);
+                            }
+                          },
+                        ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: _field(
+                                price,
+                                'Giá thủ công (đ)',
+                                keyboard: TextInputType.number,
+                                required: selectedItems.isEmpty,
+                                focusNode: priceFocus,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) {
+                                  if (product.text.trim().isNotEmpty) {
+                                    addManualProduct(focusNext: true);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            _ManualQuantityStepper(
+                              quantity: manualQuantity,
+                              onChanged: changeManualQuantity,
                             ),
                           ],
                         ),
-                      ),
-                    ),
-                  if (selectedItems.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        'Tiền sản phẩm: ${money(itemsPrice)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  _field(
-                    product,
-                    'Tên sản phẩm thêm thủ công',
-                    onChanged: (_) => components = [],
-                    required: selectedItems.isEmpty,
-                  ),
-                  _field(
-                    price,
-                    'Giá sản phẩm thêm thủ công (đ)',
-                    keyboard: TextInputType.number,
-                    required: selectedItems.isEmpty,
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: addManualProduct,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Thêm sản phẩm'),
-                  ),
-                  Text(
-                    orderItemsComponents(selectedItems).isEmpty
-                        ? 'Chưa có định lượng hoa cho đơn này'
-                        : '${orderItemsComponents(selectedItems).length} loại hoa đã được lưu vào đơn',
-                  ),
-                ],
-                if (step == 2) ...[
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.calendar_month, color: _rose),
-                      title: const RequiredLabel('Ngày giao'),
-                      subtitle: Text(dayLabel(delivery)),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: pickDeliveryDate,
-                    ),
-                  ),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.schedule, color: _rose),
-                      title: const RequiredLabel('Giờ giao'),
-                      subtitle: Text(
-                        DateFormat('HH:mm', 'vi').format(delivery),
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: pickDeliveryTime,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  _field(address, 'Địa chỉ giao'),
-                  _field(
-                    note,
-                    'Ghi chú (không bắt buộc)',
-                    maxLines: 3,
-                    required: false,
-                  ),
-                ],
-                if (step == 3) ...[
-                  if (deliveryIssue() != null)
-                    TextButton.icon(
-                      onPressed: () => setState(() => step = 2),
-                      icon: const Icon(Icons.schedule),
-                      label: const Text('Chọn lại giờ giao'),
-                    ),
-                  _field(
-                    shipping,
-                    'Phí giao (đ)',
-                    keyboard: TextInputType.number,
-                  ),
-                  _field(
-                    paid,
-                    'Đã thu / tiền cọc (đ)',
-                    keyboard: TextInputType.number,
-                    enabled: widget.initialOrder == null,
-                  ),
-                  const SizedBox(height: 12),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Tổng: ${money(itemsPrice + (parseMoney(shipping.text) ?? 0))}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                        if (product.text.trim().isNotEmpty &&
+                            (parseMoney(price.text) ?? 0) > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              'Thành tiền: $manualQuantity × ${money(parseMoney(price.text)!)} = ${money(manualQuantity * parseMoney(price.text)!)}',
+                              style: TextStyle(color: context.palette.muted),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Còn lại: ${money((itemsPrice + (parseMoney(shipping.text) ?? 0) - (parseMoney(paid.text) ?? 0)).clamp(0, 999999999999))}',
+                        OutlinedButton.icon(
+                          onPressed: () => addManualProduct(focusNext: true),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Thêm sản phẩm'),
+                        ),
+                        Text(
+                          orderItemsComponents(selectedItems).isEmpty
+                              ? 'Chưa có định lượng hoa cho đơn này'
+                              : '${orderItemsComponents(selectedItems).length} loại hoa đã được lưu vào đơn',
+                        ),
+                      ],
+                      if (step == 2) ...[
+                        Card(
+                          child: ListTile(
+                            leading: Icon(
+                              Icons.calendar_month,
+                              color: context.palette.primary,
+                            ),
+                            title: const RequiredLabel('Ngày giao'),
+                            subtitle: Text(dayLabel(delivery)),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: pickDeliveryDate,
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                        Card(
+                          child: ListTile(
+                            leading: Icon(
+                              Icons.schedule,
+                              color: context.palette.primary,
+                            ),
+                            title: const RequiredLabel('Giờ giao'),
+                            subtitle: Text(
+                              DateFormat('HH:mm', 'vi').format(delivery),
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: pickDeliveryTime,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        AddressField(
+                          controller: address,
+                          suggester: _addressSuggester,
+                          onChanged: () {
+                            setState(() {});
+                            _scheduleDraftSave();
+                          },
+                        ),
+                        _field(
+                          note,
+                          'Ghi chú (không bắt buộc)',
+                          maxLines: 3,
+                          required: false,
+                        ),
+                      ],
+                      if (step == 3) ...[
+                        if (deliveryIssue() != null)
+                          TextButton.icon(
+                            onPressed: () => setState(() => step = 2),
+                            icon: const Icon(Icons.schedule),
+                            label: const Text('Chọn lại giờ giao'),
+                          ),
+                        _field(
+                          shipping,
+                          'Phí giao (đ)',
+                          keyboard: TextInputType.number,
+                        ),
+                        _field(
+                          paid,
+                          'Đã thu / tiền cọc (đ)',
+                          keyboard: TextInputType.number,
+                          enabled: widget.initialOrder == null,
+                        ),
+                        const SizedBox(height: 12),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Tổng: ${money(itemsPrice + (parseMoney(shipping.text) ?? 0))}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Còn lại: ${money((itemsPrice + (parseMoney(shipping.text) ?? 0) - (parseMoney(paid.text) ?? 0)).clamp(0, 999999999999))}',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (reviewing) ..._reviewContent(),
+                    ],
                   ),
-                ],
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.fromLTRB(24, 14, 24, 12),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: FlowerTemplateTheme.line)),
-            ),
-            child: Row(
-              children: [
-                if (step > 0)
-                  TextButton(
-                    onPressed: saving
+                ),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                  child: FloatingFormBar(
+                    showBack: step > 0,
+                    onBack: saving
                         ? null
                         : () {
                             setState(() => step--);
                             _scheduleDraftSave();
                           },
-                    child: const Text('Quay lại'),
-                  ),
-                const Spacer(),
-                FilledButton(
-                  onPressed: saving || (step == 3 && deliveryIssue() != null)
-                      ? null
-                      : next,
-                  child: Text(
-                    saving
+                    onPrimary: saving || (step >= 3 && deliveryIssue() != null)
+                        ? null
+                        : next,
+                    primaryLabel: saving
                         ? 'Đang lưu...'
-                        : step == 3
+                        : reviewing
                         ? widget.initialOrder == null
-                              ? 'Lưu đơn'
-                              : 'Cập nhật đơn'
+                              ? 'Xác nhận tạo đơn'
+                              : 'Xác nhận cập nhật'
                         : 'Tiếp tục',
+                    primaryIcon: saving
+                        ? null
+                        : reviewing
+                        ? Icons.check_circle_rounded
+                        : Icons.arrow_forward_rounded,
                   ),
                 ),
               ],
@@ -2250,6 +3129,180 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         ],
       ),
     ),
+  );
+
+  List<Widget> _reviewContent() {
+    final palette = context.palette;
+    final shippingFee = parseMoney(shipping.text) ?? 0;
+    final paidAmount = widget.initialOrder?.paid ?? parseMoney(paid.text) ?? 0;
+    final total = itemsPrice + shippingFee;
+    final remaining = (total - paidAmount).clamp(0, total);
+    final when = DateFormat(
+      "EEEE, dd/MM/yyyy 'lúc' HH:mm",
+      'vi',
+    ).format(delivery);
+    TextStyle muted([double size = 13]) =>
+        TextStyle(fontSize: size, color: palette.muted);
+    return [
+      Text(
+        'Kiểm tra lại thông tin. Đơn chỉ được lưu khi bạn bấm xác nhận.',
+        style: muted(),
+      ),
+      const SizedBox(height: 12),
+      _reviewCard('KHÁCH HÀNG', 0, [
+        Text(
+          name.text.trim(),
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: palette.ink,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          phone.text.trim().isEmpty
+              ? 'Chưa có số điện thoại'
+              : phone.text.trim(),
+          style: muted(14),
+        ),
+      ]),
+      _reviewCard('SẢN PHẨM', 1, [
+        for (final item in selectedItems)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${item.quantity} × ${item.name}',
+                    style: TextStyle(color: palette.ink),
+                  ),
+                ),
+                Text(
+                  money(item.total),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: palette.ink,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ]),
+      _reviewCard('GIAO HÀNG', 2, [
+        _reviewRow(Icons.schedule_rounded, when),
+        const SizedBox(height: 8),
+        _reviewRow(Icons.place_outlined, address.text.trim()),
+        if (note.text.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _reviewRow(Icons.sticky_note_2_outlined, note.text.trim()),
+        ],
+      ]),
+      _reviewCard('THANH TOÁN', 3, [
+        _reviewLine('Tiền hoa', money(itemsPrice)),
+        _reviewLine('Phí giao', money(shippingFee)),
+        _reviewLine('Tổng', money(total)),
+        _reviewLine(
+          widget.initialOrder == null ? 'Tiền cọc' : 'Đã thu',
+          money(paidAmount),
+        ),
+        Divider(color: palette.line),
+        Row(
+          children: [
+            Text(
+              'CÒN LẠI',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1,
+                color: palette.ink,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              money(remaining),
+              style: TextStyle(
+                fontFamily: FlowerTemplateTheme.headingFont,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: palette.adapt(const Color(0xFFB8692F)),
+              ),
+            ),
+          ],
+        ),
+      ]),
+    ];
+  }
+
+  Widget _reviewCard(String title, int editStep, List<Widget> children) => Card(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(18, 10, 8, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: context.palette.accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: saving
+                    ? null
+                    : () {
+                        setState(() => step = editStep);
+                        _scheduleDraftSave();
+                      },
+                child: Text(
+                  'Sửa',
+                  semanticsLabel: 'Sửa ${title.toLowerCase()}',
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: children,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _reviewLine(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      children: [
+        Text(label, style: TextStyle(color: context.palette.muted)),
+        const Spacer(),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: context.palette.ink,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _reviewRow(IconData icon, String text) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 18, color: context.palette.primary),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Text(text, style: TextStyle(color: context.palette.ink)),
+      ),
+    ],
   );
 
   Widget _field(
@@ -2261,10 +3314,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     bool enabled = true,
     bool required = true,
     void Function(String)? onChanged,
+    FocusNode? focusNode,
+    ValueChanged<String>? onSubmitted,
+    GestureTapCallback? onTap,
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: TextField(
       controller: controller,
+      focusNode: focusNode,
+      onSubmitted: onSubmitted,
+      onTap: onTap,
       enabled: enabled,
       keyboardType: keyboard,
       inputFormatters: keyboard == TextInputType.number
@@ -2282,4 +3341,60 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
     ),
   );
+}
+
+/// "− 2 +" control for the quantity of a product that is still being typed.
+class _ManualQuantityStepper extends StatelessWidget {
+  const _ManualQuantityStepper({
+    required this.quantity,
+    required this.onChanged,
+  });
+
+  final int quantity;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: palette.field,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Giảm số lượng thủ công',
+            onPressed: quantity > 1 ? () => onChanged(quantity - 1) : null,
+            icon: const Icon(Icons.remove_rounded),
+          ),
+          Semantics(
+            container: true,
+            label: 'Số lượng $quantity',
+            excludeSemantics: true,
+            child: SizedBox(
+              width: 28,
+              child: Text(
+                '$quantity',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: palette.ink,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Tăng số lượng thủ công',
+            onPressed: quantity < 999 ? () => onChanged(quantity + 1) : null,
+            icon: const Icon(Icons.add_rounded),
+          ),
+        ],
+      ),
+    );
+  }
 }

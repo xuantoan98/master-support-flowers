@@ -25,6 +25,13 @@ class FakePaymentRepository extends OrderRepository {
 
   @override
   Future<List<OrderMedia>> mediaForOrder(int orderId) async => [];
+
+  final statuses = <OrderStatus>[];
+
+  @override
+  Future<void> updateStatus(FlowerOrder order, OrderStatus status) async {
+    statuses.add(status);
+  }
 }
 
 void main() {
@@ -65,4 +72,47 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('status stepper advances one step and can cancel', (
+    tester,
+  ) async {
+    final repository = FakePaymentRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OrderDetailScreen(
+          order: FlowerOrder(
+            id: 3,
+            customerName: 'Lan',
+            phone: '',
+            productName: 'Bó hồng',
+            price: 200000,
+            shippingFee: 0,
+            paid: 0,
+            deliveryAt: DateTime(2026, 11, 20),
+            address: '12 Hoa Mai',
+          ),
+          repository: repository,
+          onChanged: () async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Hủy đơn'), 200);
+    await tester.ensureVisible(find.text('Chuyển sang: Đang làm'));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Mới, đang ở bước này'), findsOneWidget);
+    await tester.tap(find.text('Chuyển sang: Đang làm'));
+    await tester.pumpAndSettle();
+    expect(repository.statuses, [OrderStatus.making]);
+    expect(find.bySemanticsLabel('Mới, đã xong'), findsOneWidget);
+    expect(find.text('Chuyển sang: Chờ duyệt'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Hủy đơn'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hủy đơn'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Giữ đơn'));
+    await tester.pumpAndSettle();
+    expect(repository.statuses, [OrderStatus.making]);
+  });
 }

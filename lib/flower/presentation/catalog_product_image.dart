@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../domain/catalog_placeholders.dart';
+import 'flower_template_theme.dart';
 
 class CatalogProductImage extends StatelessWidget {
   const CatalogProductImage({super.key, required this.path, this.size = 56});
@@ -42,7 +43,7 @@ class CatalogProductImage extends StatelessWidget {
       height: size,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFDCEAF6),
+        color: context.palette.blush,
         borderRadius: BorderRadius.circular(14),
       ),
       child: ClipRRect(borderRadius: BorderRadius.circular(11), child: image),

@@ -25,8 +25,8 @@ class TemplateSectionHeading extends StatelessWidget {
             if (eyebrow != null) ...[
               Text(
                 eyebrow!,
-                style: const TextStyle(
-                  color: FlowerTemplateTheme.deepSage,
+                style: TextStyle(
+                  color: context.palette.accent,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
@@ -36,9 +36,9 @@ class TemplateSectionHeading extends StatelessWidget {
             ],
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: FlowerTemplateTheme.headingFont,
-                color: FlowerTemplateTheme.ink,
+                color: context.palette.ink,
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
                 height: 1.3,
@@ -63,10 +63,10 @@ class TemplateIconBadge extends StatelessWidget {
     width: size,
     height: size,
     decoration: BoxDecoration(
-      color: FlowerTemplateTheme.hydrangea.withValues(alpha: 0.55),
+      color: context.palette.blush.withValues(alpha: 0.55),
       borderRadius: BorderRadius.circular(13),
     ),
-    child: Icon(icon, color: FlowerTemplateTheme.navy, size: size * 0.52),
+    child: Icon(icon, color: context.palette.primary, size: size * 0.52),
   );
 }
 
@@ -92,10 +92,86 @@ class TemplateEmptyState extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: FlowerTemplateTheme.muted),
+            style: TextStyle(color: context.palette.muted),
           ),
         ],
       ),
     ),
   );
+}
+
+/// Floating bottom actions for form screens: an optional round back button
+/// and a pill-shaped primary button, both casting a shadow over the content.
+class FloatingFormBar extends StatelessWidget {
+  const FloatingFormBar({
+    super.key,
+    required this.primaryLabel,
+    required this.onPrimary,
+    this.primaryIcon = Icons.arrow_forward_rounded,
+    this.showBack = false,
+    this.onBack,
+  });
+
+  final String primaryLabel;
+
+  /// Shown after the label, e.g. an arrow for "next" or a check to confirm.
+  final IconData? primaryIcon;
+  final VoidCallback? onPrimary;
+  final bool showBack;
+  final VoidCallback? onBack;
+
+  /// Space to leave under scrolling content so the bar never hides it.
+  static const reservedHeight = 96.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final shadow = Colors.black.withValues(alpha: palette.isDark ? 0.5 : 0.22);
+    return Row(
+      children: [
+        if (showBack)
+          Material(
+            color: palette.card,
+            shape: CircleBorder(side: BorderSide(color: palette.line)),
+            elevation: 6,
+            shadowColor: shadow,
+            child: IconButton(
+              tooltip: 'Quay lại',
+              iconSize: 24,
+              constraints: const BoxConstraints.tightFor(width: 54, height: 54),
+              onPressed: onBack,
+              icon: Icon(Icons.arrow_back, color: palette.ink),
+            ),
+          ),
+        if (showBack) const SizedBox(width: 12),
+        Expanded(
+          child: FilledButton(
+            onPressed: onPrimary,
+            style: FilledButton.styleFrom(
+              elevation: 6,
+              shadowColor: shadow,
+              minimumSize: const Size.fromHeight(54),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    primaryLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (primaryIcon != null) ...[
+                  const SizedBox(width: 8),
+                  Icon(primaryIcon, size: 20),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

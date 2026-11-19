@@ -122,9 +122,9 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
                 children: [
                   Text(
                     '${DateFormat('dd/MM', 'vi').format(current.start)} – ${DateFormat('dd/MM', 'vi').format(current.end.subtract(const Duration(days: 1)))}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: FlowerTemplateTheme.ink,
+                      color: context.palette.ink,
                     ),
                   ),
                   const SizedBox(height: 12),

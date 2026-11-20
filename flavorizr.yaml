@@ -1,29 +1,29 @@
 flavors:
   dev:
     app:
-      name: "VTN Base Flutter Dev"
+      name: "Sổ Hoa Dev"
 
     android:
-      applicationId: "com.base.flutter.bloc"
-      icon: "assets/images/logo/rounded_logo.png"
+      applicationId: "masterx.support.flowers.dev"
+      icon: "assets/images/logo/rounded_logo_dev.png"
       firebase:
         config: "android/app/src/dev/google-services.json"
     ios:
-      bundleId: "com.base.flutter.bloc"
-      icon: "assets/images/logo/logo.png"
+      bundleId: "masterx.support.flowers.dev"
+      icon: "assets/images/logo/logo_dev.png"
       firebase:
         config: "ios/Runner/dev/GoogleService-Info.plist"
 
   prod:
     app:
-      name: "Example"
+      name: "Sổ Hoa"
     android:
-      applicationId: "com.vtn.example.prod"
+      applicationId: "masterx.support.flowers"
       icon: "assets/images/logo/rounded_logo.png"
       firebase:
         config: "android/app/src/prod/google-services.json"
     ios:
-      bundleId: "com.vtn.example.prod"
+      bundleId: "masterx.support.flowers"
       icon: "assets/images/logo/logo.png"
       firebase:
         config: "ios/Runner/prod/GoogleService-Info.plist"

@@ -1,4 +1,4 @@
-package com.vtn.global.base.flutter
+package masterx.support.flowers
 
 import io.flutter.embedding.android.FlutterActivity
 

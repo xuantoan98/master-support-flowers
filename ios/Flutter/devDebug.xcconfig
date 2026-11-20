@@ -2,5 +2,5 @@
 #include "Generated.xcconfig"
 
 ASSET_PREFIX=dev
-BUNDLE_NAME=Tiệm Hoa Dev
-BUNDLE_DISPLAY_NAME=Tiệm Hoa Dev
+BUNDLE_NAME=Sổ Hoa Dev
+BUNDLE_DISPLAY_NAME=Sổ Hoa Dev

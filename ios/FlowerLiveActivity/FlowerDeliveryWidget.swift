@@ -47,7 +47,7 @@ struct FlowerDeliveryWidget: Widget {
                         .font(.headline)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.state.isFinished ? "Đã kết thúc" : (context.isStale ? "Cần kiểm tra · Tiệm Hoa" : "Đang giao · Tiệm Hoa"))
+                    Text(context.state.isFinished ? "Đã kết thúc" : (context.isStale ? "Cần kiểm tra · Sổ Hoa" : "Đang giao · Sổ Hoa"))
                         .font(.subheadline)
                 }
             } compactLeading: {

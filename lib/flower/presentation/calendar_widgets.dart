@@ -284,8 +284,8 @@ class _DayCell extends StatelessWidget {
                         top: 2,
                         right: 2,
                         child: Container(
-                          constraints: const BoxConstraints(minWidth: 15),
-                          height: 15,
+                          constraints: const BoxConstraints(minWidth: 18),
+                          height: 18,
                           padding: const EdgeInsets.symmetric(horizontal: 3),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
@@ -299,7 +299,7 @@ class _DayCell extends StatelessWidget {
                               color: palette.isDark
                                   ? palette.canvas
                                   : Colors.white,
-                              fontSize: 8.5,
+                              fontSize: 10,
                               fontWeight: FontWeight.w700,
                               height: 1,
                             ),
@@ -312,7 +312,7 @@ class _DayCell extends StatelessWidget {
                       child: Text(
                         '${date.day}',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 12,
                           height: 1.2,
                           color: numberColor,
                           fontWeight: hasOrders || isToday || overdue
@@ -479,7 +479,7 @@ class _LegendItem extends StatelessWidget {
         ),
       ),
       const SizedBox(width: 4),
-      Text(label, style: TextStyle(fontSize: 11, color: context.palette.muted)),
+      Text(label, style: TextStyle(fontSize: 12, color: context.palette.muted)),
     ],
   );
 }
@@ -585,7 +585,7 @@ class OverviewBento extends StatelessWidget {
                             Text(
                               comparison.substring(2),
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 color: up
                                     ? context.palette.adapt(
@@ -638,7 +638,7 @@ class OverviewBento extends StatelessWidget {
                             Text(
                               'Theo tuần',
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 12,
                                 color: context.palette.muted,
                               ),
                             ),
@@ -747,7 +747,7 @@ class _SmallStat extends StatelessWidget {
             caption,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, color: context.palette.muted),
+            style: TextStyle(fontSize: 12, color: context.palette.muted),
           ),
         ],
       ),
@@ -1061,7 +1061,7 @@ class _OrderFanPopup extends StatelessWidget {
                                 ? '${date.day}/${date.month} · ${orders.length} đơn · xem tất cả bên dưới'
                                 : '${date.day}/${date.month} · Chạm card để mở đơn',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 12,
                               color: context.palette.muted,
                             ),
                           ),
@@ -1162,7 +1162,7 @@ class _BigOrderCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 12,
                                 color: palette.muted,
                               ),
                             ),

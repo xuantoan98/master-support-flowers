@@ -313,3 +313,12 @@ List<FlowerOrder> filterOrders(
         order.id?.toString() == term;
   }).toList();
 }
+
+/// Half of [total] rounded up to the next 1.000 đ, the usual deposit.
+int depositHalf(int total) {
+  if (total <= 0) {
+    return 0;
+  }
+  final half = (total + 1) ~/ 2;
+  return ((half + 999) ~/ 1000) * 1000;
+}

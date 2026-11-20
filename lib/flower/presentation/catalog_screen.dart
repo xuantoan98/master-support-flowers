@@ -25,6 +25,34 @@ class CatalogScreen extends StatefulWidget {
 
 class _CatalogScreenState extends State<CatalogScreen> {
   late Future<List<CatalogProduct>> products = widget.repository.listProducts();
+  final search = TextEditingController();
+  ProductCategory? category;
+
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
+
+  Future<void> toggleSoldOut(CatalogProduct product) async {
+    try {
+      await widget.repository.setProductSoldOut(product.id!, !product.soldOut);
+      if (mounted) {
+        AppToast.show(
+          context,
+          product.soldOut
+              ? '“${product.name}” bán lại được'
+              : '“${product.name}” tạm hết, ẩn khi tạo đơn',
+          isError: false,
+        );
+      }
+      refresh();
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, 'Không thể cập nhật mẫu hoa');
+      }
+    }
+  }
 
   void refresh() => setState(() {
     products = widget.repository.listProducts();
@@ -96,24 +124,62 @@ class _CatalogScreenState extends State<CatalogScreen> {
             child: Text('Chưa có mẫu hoa. Thêm mẫu để tạo đơn nhanh hơn.'),
           );
         }
+        final all = snapshot.data!;
+        final shown = all
+            .where(
+              (p) =>
+                  (category == null || p.category == category) &&
+                  p.matches(search.text),
+            )
+            .toList();
+        final used = ProductCategory.values
+            .where((c) => all.any((p) => p.category == c))
+            .toList();
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
-          itemCount: snapshot.data!.length + 1,
+          itemCount: shown.length + 1,
           itemBuilder: (context, index) {
             if (index == 0) {
               return Padding(
-                padding: const EdgeInsets.only(bottom: 18),
-                child: TemplateSectionHeading(
-                  eyebrow: 'BỘ SƯU TẬP',
-                  title: 'Mẫu hoa',
-                  trailing: Text(
-                    '${snapshot.data!.length} mẫu',
-                    style: TextStyle(color: context.palette.muted),
-                  ),
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TemplateSectionHeading(
+                      eyebrow: 'BỘ SƯU TẬP',
+                      title: 'Mẫu hoa',
+                      trailing: Text(
+                        '${all.length} mẫu',
+                        style: TextStyle(color: context.palette.muted),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: search,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Tìm tên mẫu, loại hoa',
+                      ),
+                    ),
+                    if (used.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      CategoryFilter(
+                        categories: used,
+                        value: category,
+                        onChanged: (value) => setState(() => category = value),
+                      ),
+                    ],
+                    if (shown.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 24),
+                        child: Text('Không có mẫu phù hợp'),
+                      ),
+                  ],
                 ),
               );
             }
-            final product = snapshot.data![index - 1];
+            final product = shown[index - 1];
             return Card(
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
@@ -122,14 +188,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   padding: const EdgeInsets.all(10),
                   child: Row(
                     children: [
-                      CatalogProductImage(path: product.imagePath, size: 104),
+                      Opacity(
+                        opacity: product.soldOut ? 0.4 : 1,
+                        child: CatalogProductImage(
+                          path: product.imagePath,
+                          size: 104,
+                        ),
+                      ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              product.name,
+                              product.displayName,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -141,7 +213,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             ),
                             const SizedBox(height: 7),
                             Text(
-                              '${product.components.length} loại hoa',
+                              [
+                                ?product.category?.label,
+                                '${product.components.length} loại hoa',
+                                if (product.soldOut) 'Tạm hết',
+                              ].join(' · '),
                               style: TextStyle(
                                 color: context.palette.muted,
                                 fontSize: 12,
@@ -159,10 +235,35 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           ],
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Ẩn mẫu',
-                        icon: const Icon(Icons.archive_outlined),
-                        onPressed: () => archive(product),
+                      PopupMenuButton<String>(
+                        tooltip: 'Tùy chọn ${product.name}',
+                        onSelected: (value) => value == 'sold_out'
+                            ? toggleSoldOut(product)
+                            : archive(product),
+                        itemBuilder: (_) => [
+                          PopupMenuItem(
+                            value: 'sold_out',
+                            child: ListTile(
+                              leading: Icon(
+                                product.soldOut
+                                    ? Icons.shopping_cart_outlined
+                                    : Icons.remove_shopping_cart_outlined,
+                              ),
+                              title: Text(
+                                product.soldOut
+                                    ? 'Có hoa lại, bán tiếp'
+                                    : 'Tạm hết hoa',
+                              ),
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'archive',
+                            child: ListTile(
+                              leading: Icon(Icons.archive_outlined),
+                              title: Text('Ẩn mẫu khỏi catalog'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -222,6 +323,9 @@ class _CatalogEditorScreenState extends State<CatalogEditorScreen> {
   final inputs = <_ComponentInput>[];
   bool saving = false;
   late String imagePath = widget.initial?.imagePath ?? '';
+  late ProductCategory? category = widget.initial?.category;
+  late String size = widget.initial?.size ?? '';
+  late bool soldOut = widget.initial?.soldOut ?? false;
   XFile? selectedImage;
 
   @override
@@ -265,6 +369,9 @@ class _CatalogEditorScreenState extends State<CatalogEditorScreen> {
       price: parseCurrencyInput(price.text) ?? 0,
       imagePath: imagePath,
       components: components,
+      category: category,
+      size: size,
+      soldOut: soldOut,
     );
     final issue = item.validate();
     if (issue != null) {
@@ -275,13 +382,7 @@ class _CatalogEditorScreenState extends State<CatalogEditorScreen> {
     try {
       if (selectedImage != null) {
         imagePath = await CatalogImageStore().save(selectedImage!);
-        item = CatalogProduct(
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          imagePath: imagePath,
-          components: item.components,
-        );
+        item = item.copyWith(imagePath: imagePath);
       }
       await widget.repository.saveProduct(item);
       if (mounted) {
@@ -382,6 +483,49 @@ class _CatalogEditorScreenState extends State<CatalogEditorScreen> {
           decoration: const InputDecoration(
             label: RequiredLabel('Giá bán (đ)'),
           ),
+        ),
+        const SizedBox(height: 16),
+        Text('Loại', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final value in ProductCategory.values)
+              ChoiceChip(
+                label: Text(value.label),
+                selected: category == value,
+                onSelected: (selected) =>
+                    setState(() => category = selected ? value : null),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Kích cỡ (không bắt buộc)',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        SegmentedButton<String>(
+          emptySelectionAllowed: true,
+          showSelectedIcon: false,
+          segments: [
+            for (final value in productSizes)
+              ButtonSegment(value: value, label: Text('Cỡ $value')),
+          ],
+          selected: {if (size.isNotEmpty) size},
+          onSelectionChanged: (selection) =>
+              setState(() => size = selection.isEmpty ? '' : selection.single),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Tạm hết hoa'),
+          subtitle: const Text(
+            'Vẫn giữ trong catalog, ẩn khi tạo đơn và bán nhanh',
+          ),
+          value: soldOut,
+          onChanged: (value) => setState(() => soldOut = value),
         ),
         const SizedBox(height: 24),
         Row(
@@ -486,4 +630,40 @@ class _CatalogEditorScreenState extends State<CatalogEditorScreen> {
       ),
     );
   }
+}
+
+/// One row of category chips; "Tất cả" clears the filter.
+class CategoryFilter extends StatelessWidget {
+  const CategoryFilter({
+    super.key,
+    required this.categories,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<ProductCategory> categories;
+  final ProductCategory? value;
+  final ValueChanged<ProductCategory?> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        ChoiceChip(
+          label: const Text('Tất cả'),
+          selected: value == null,
+          onSelected: (_) => onChanged(null),
+        ),
+        for (final category in categories) ...[
+          const SizedBox(width: 6),
+          ChoiceChip(
+            label: Text(category.short),
+            selected: value == category,
+            onSelected: (selected) => onChanged(selected ? category : null),
+          ),
+        ],
+      ],
+    ),
+  );
 }

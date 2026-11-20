@@ -175,4 +175,52 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('more orders after buying shows how many more to buy', (
+    tester,
+  ) async {
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    FlowerOrder order(int roses, String name) => FlowerOrder(
+      customerName: name,
+      phone: '',
+      productName: 'Bó hồng',
+      price: 200000,
+      shippingFee: 0,
+      paid: 0,
+      deliveryAt: tomorrow,
+      address: '12 Hoa Mai',
+      components: [
+        FlowerComponent(
+          name: 'Hồng đỏ',
+          quantity: roses,
+          unit: 'cành',
+          isMain: true,
+        ),
+      ],
+    );
+    final repository = FakeShoppingRepository([
+      order(5, 'Lan'),
+      order(7, 'Mai'),
+    ]);
+    // 5 roses were bought before Mai's order came in.
+    repository.checks['hồng đỏ|cành'] = 5;
+    await tester.pumpWidget(
+      MaterialApp(home: ShoppingListScreen(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ngày mai'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cần 12 cành · đã mua 5, cần thêm 7'), findsOneWidget);
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isFalse,
+    );
+
+    await tester.tap(find.byTooltip('Đơn cần Hồng đỏ'));
+    await tester.pumpAndSettle();
+    expect(find.text('Dùng cho 2 đơn'), findsOneWidget);
+    expect(find.text('Lan'), findsOneWidget);
+    expect(find.text('7 cành'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

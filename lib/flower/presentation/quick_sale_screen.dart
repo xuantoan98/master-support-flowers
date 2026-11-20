@@ -22,6 +22,28 @@ class _QuickSaleScreenState extends State<QuickSaleScreen> {
   final discount = TextEditingController();
   PaymentMethod method = PaymentMethod.cash;
   bool saving = false;
+  ProductCategory? category;
+
+  /// When the sale happened, for a sale entered later the same day.
+  /// Null means now.
+  TimeOfDay? soldAt;
+
+  Future<void> pickSoldAt() async {
+    final now = TimeOfDay.now();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: soldAt ?? now,
+      helpText: 'Đơn đã bán lúc (hôm nay)',
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    if (picked.hour * 60 + picked.minute > now.hour * 60 + now.minute) {
+      AppToast.show(context, 'Giờ bán không được sau bây giờ');
+      return;
+    }
+    setState(() => soldAt = picked);
+  }
 
   @override
   void dispose() {
@@ -52,7 +74,7 @@ class _QuickSaleScreenState extends State<QuickSaleScreen> {
         items.add(
           OrderItem(
             catalogProductId: product.id,
-            name: product.name,
+            name: product.displayName,
             unitPrice: product.price,
             components: List.of(product.components),
           ),
@@ -97,7 +119,16 @@ class _QuickSaleScreenState extends State<QuickSaleScreen> {
         return;
       }
     }
-    final now = DateTime.now();
+    final current = DateTime.now();
+    final now = soldAt == null
+        ? current
+        : DateTime(
+            current.year,
+            current.month,
+            current.day,
+            soldAt!.hour,
+            soldAt!.minute,
+          );
     final order = FlowerOrder(
       customerName: customer.text.trim().isEmpty
           ? 'Khách lẻ'
@@ -218,16 +249,39 @@ class _QuickSaleScreenState extends State<QuickSaleScreen> {
                       if (!snapshot.hasData) {
                         return const Center(child: CircularProgressIndicator());
                       }
-                      return GridView.count(
-                        crossAxisCount: 3,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 10,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: 0.72,
+                      // Sold-out products stay in the catalog, not here.
+                      final available = snapshot.data!
+                          .where((p) => !p.soldOut)
+                          .toList();
+                      final used = ProductCategory.values
+                          .where((c) => available.any((p) => p.category == c))
+                          .toList();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          for (final product in snapshot.data!)
-                            _productTile(product),
+                          if (used.length > 1) ...[
+                            CategoryFilter(
+                              categories: used,
+                              value: category,
+                              onChanged: (value) =>
+                                  setState(() => category = value),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          GridView.count(
+                            crossAxisCount: 3,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            childAspectRatio: 0.72,
+                            children: [
+                              for (final product in available)
+                                if (category == null ||
+                                    product.category == category)
+                                  _productTile(product),
+                            ],
+                          ),
                         ],
                       );
                     },
@@ -328,7 +382,25 @@ class _QuickSaleScreenState extends State<QuickSaleScreen> {
                     methods: const [PaymentMethod.cash, PaymentMethod.transfer],
                     onChanged: (value) => setState(() => method = value),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.history_toggle_off),
+                    title: const Text('Bán lúc'),
+                    subtitle: Text(
+                      soldAt == null
+                          ? 'Bây giờ · chạm để ghi bù đơn đã bán trước đó hôm nay'
+                          : 'Hôm nay ${soldAt!.hour.toString().padLeft(2, '0')}:${soldAt!.minute.toString().padLeft(2, '0')}',
+                    ),
+                    trailing: soldAt == null
+                        ? const Icon(Icons.chevron_right)
+                        : IconButton(
+                            tooltip: 'Bán bây giờ',
+                            onPressed: () => setState(() => soldAt = null),
+                            icon: const Icon(Icons.close),
+                          ),
+                    onTap: pickSoldAt,
+                  ),
                   ExpansionTile(
                     tilePadding: EdgeInsets.zero,
                     title: const Text('Thông tin khách (không bắt buộc)'),
@@ -454,7 +526,7 @@ class _QuickSaleScreenState extends State<QuickSaleScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          product.name,
+                          product.displayName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

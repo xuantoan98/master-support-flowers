@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/order_repository.dart';
+import '../domain/flower_order.dart';
 import '../domain/shopping_list.dart';
 import 'app_toast.dart';
 import 'flower_template_theme.dart';
@@ -24,8 +25,15 @@ class ShoppingListScreen extends StatefulWidget {
 }
 
 class _ShoppingData {
-  const _ShoppingData(this.list, this.checks, this.start, this.end);
+  const _ShoppingData(
+    this.list,
+    this.checks,
+    this.start,
+    this.end,
+    this.orders,
+  );
   final ShoppingList list;
+  final List<FlowerOrder> orders;
   final Map<String, int> checks;
   final DateTime start;
   final DateTime end;
@@ -47,6 +55,51 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
       checks,
       start,
       end,
+      orders,
+    );
+  }
+
+  void showOrders(_ShoppingData current, ShoppingItem item) {
+    final needing = ordersNeeding(
+      current.orders,
+      item,
+      current.start,
+      current.end,
+    );
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Text(
+              '${item.name} · ${item.quantity} ${item.unit}',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text('Dùng cho ${needing.length} đơn'),
+            const SizedBox(height: 8),
+            for (final (order, count) in needing)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  order.id == null
+                      ? order.customerName
+                      : '#${order.id} · ${order.customerName}',
+                ),
+                subtitle: Text(
+                  '${DateFormat('HH:mm dd/MM', 'vi').format(order.deliveryAt)} · ${order.productName}',
+                ),
+                trailing: Text(
+                  '$count ${item.unit}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -92,6 +145,7 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
               ),
               const SizedBox(height: 18),
               SegmentedButton<int>(
+                showSelectedIcon: false,
                 segments: const [
                   ButtonSegment(value: 0, label: Text('Hôm nay')),
                   ButtonSegment(value: 1, label: Text('Ngày mai')),
@@ -134,6 +188,12 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
                       color: context.palette.ink,
                     ),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Mua xong loại nào thì tích loại đó. Nếu có thêm đơn cần '
+                    'loại hoa đã tích, dấu tích tự bỏ và ghi số cần mua thêm.',
+                    style: TextStyle(color: context.palette.muted),
+                  ),
                   const SizedBox(height: 12),
                   if (current.list.ordersWithoutRecipe > 0)
                     Card(
@@ -152,16 +212,16 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
                       message: 'Chưa có hoa cần mua trong khoảng này',
                       icon: Icons.shopping_basket_outlined,
                     ),
-                  for (final item in current.list.items)
-                    Card(
-                      child: CheckboxListTile(
-                        value: current.checks[item.key] == item.quantity,
-                        onChanged: (value) =>
-                            toggle(current, item, value ?? false),
-                        title: Text(item.name),
-                        subtitle: Text('${item.quantity} ${item.unit}'),
-                      ),
+                  // Still to buy first, bought ones at the bottom.
+                  for (final item in [
+                    ...current.list.items.where(
+                      (i) => !shoppingDone(i, current.checks[i.key]),
                     ),
+                    ...current.list.items.where(
+                      (i) => shoppingDone(i, current.checks[i.key]),
+                    ),
+                  ])
+                    _itemTile(current, item),
                 ],
               );
             },
@@ -170,4 +230,46 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
       ],
     ),
   );
+
+  Widget _itemTile(_ShoppingData current, ShoppingItem item) {
+    final palette = context.palette;
+    final bought = current.checks[item.key];
+    final done = shoppingDone(item, bought);
+    final String subtitle;
+    if (done) {
+      subtitle = 'Đã mua ${item.quantity} ${item.unit}';
+    } else if (bought != null) {
+      subtitle =
+          'Cần ${item.quantity} ${item.unit} · đã mua $bought, '
+          'cần thêm ${item.quantity - bought}';
+    } else {
+      subtitle = 'Cần ${item.quantity} ${item.unit}';
+    }
+    return Card(
+      child: CheckboxListTile(
+        value: done,
+        controlAffinity: ListTileControlAffinity.leading,
+        onChanged: (value) => toggle(current, item, value ?? false),
+        title: Text(
+          item.name,
+          style: TextStyle(
+            decoration: done ? TextDecoration.lineThrough : null,
+            color: done ? palette.muted : null,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            color: bought != null && !done ? palette.accent : palette.muted,
+            fontWeight: bought != null && !done ? FontWeight.w700 : null,
+          ),
+        ),
+        secondary: IconButton(
+          tooltip: 'Đơn cần ${item.name}',
+          onPressed: () => showOrders(current, item),
+          icon: const Icon(Icons.receipt_long_outlined),
+        ),
+      ),
+    );
+  }
 }

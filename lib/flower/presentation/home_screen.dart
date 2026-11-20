@@ -23,6 +23,9 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
   /// Tab 0 shows today's to-do list; the calendar is one tap away.
   bool calendarMode = false;
   bool skipApproval = false;
+
+  /// Hidden until the setting is read, and in fakes without settings.
+  bool swipeHintSeen = true;
   final orderSearch = TextEditingController();
   OrderStatus? orderStatusFilter;
   DateTime? orderDayFilter;
@@ -103,9 +106,16 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
       } catch (_) {
         // A missing setting must not block the order list.
       }
+      var hintSeen = swipeHintSeen;
+      try {
+        hintSeen = await widget.repository.swipeHintSeen();
+      } catch (_) {
+        hintSeen = true;
+      }
       if (mounted) {
         setState(() {
           skipApproval = skip;
+          swipeHintSeen = hintSeen;
           orders = result;
           remindersEnabled = enabled;
           liveActivityEnabled = liveEnabled;
@@ -698,8 +708,10 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
               const SizedBox(height: 12),
               if (todo.isEmpty)
                 _empty('Hôm nay không còn đơn cần làm 🌷')
-              else
+              else ...[
+                ..._swipeHint(todo),
                 ...todo.map(_swipeableOrderCard),
+              ],
               const SizedBox(height: 18),
               TemplateSectionHeading(
                 eyebrow: 'CÔNG NỢ',
@@ -937,17 +949,78 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
     try {
       await widget.repository.updateStatus(order, next);
       HapticFeedback.mediumImpact();
+      if (!swipeHintSeen) {
+        _markSwipeHintSeen();
+      }
       if (mounted) {
         AppToast.show(
           context,
           'Đơn #${order.id}: ${order.copyWith(status: next).statusLabel}',
           isError: false,
+          actionLabel: 'Hoàn tác',
+          onAction: () => _undoAdvance(order, next),
         );
       }
       await refresh();
     } catch (_) {
       if (mounted) {
         AppToast.show(context, 'Không thể cập nhật trạng thái');
+      }
+    }
+  }
+
+  void _markSwipeHintSeen() {
+    setState(() => swipeHintSeen = true);
+    widget.repository.setSwipeHintSeen().catchError((Object _) {});
+  }
+
+  /// Shown above order lists until the shop swipes once or closes it.
+  List<Widget> _swipeHint(Iterable<FlowerOrder> list) {
+    if (swipeHintSeen ||
+        !list.any(
+          (o) =>
+              o.id != null &&
+              nextStatusFor(o, skipApproval: skipApproval) != null,
+        )) {
+      return const [];
+    }
+    final palette = context.palette;
+    return [
+      Card(
+        color: palette.accent.withValues(alpha: 0.10),
+        child: ListTile(
+          leading: Icon(Icons.swipe_right_alt, color: palette.accent),
+          title: const Text('Vuốt thẻ đơn sang phải để chuyển bước'),
+          subtitle: const Text('Lỡ tay thì bấm “Hoàn tác” trên thông báo.'),
+          trailing: IconButton(
+            tooltip: 'Đã hiểu',
+            onPressed: _markSwipeHintSeen,
+            icon: const Icon(Icons.close),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+    ];
+  }
+
+  /// Puts a swiped order back to the status it had before the swipe.
+  Future<void> _undoAdvance(FlowerOrder order, OrderStatus next) async {
+    try {
+      await widget.repository.updateStatus(
+        order.copyWith(status: next),
+        order.status,
+      );
+      if (mounted) {
+        AppToast.show(
+          context,
+          'Đơn #${order.id}: trở lại ${order.statusLabel}',
+          isError: false,
+        );
+      }
+      await refresh();
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, 'Không thể hoàn tác');
       }
     }
   }
@@ -1061,8 +1134,10 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                 ? 'Chưa có đơn hàng. Tạo đơn đầu tiên của bạn nhé!'
                 : 'Không có đơn phù hợp',
           )
-        else
+        else ...[
+          ..._swipeHint(visible),
           ...visible.map(_swipeableOrderCard),
+        ],
       ],
     );
   }
@@ -1216,7 +1291,7 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                           child: Text(
                             money(bucket.revenue),
                             textAlign: TextAlign.right,
-                            style: const TextStyle(fontSize: 11),
+                            style: const TextStyle(fontSize: 12),
                           ),
                         ),
                       ],
@@ -1368,7 +1443,10 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
         child: SwitchListTile(
           secondary: const Icon(Icons.notifications_active_outlined),
           title: const Text('Nhắc việc'),
-          subtitle: const Text('Trước giờ giao, quá giờ giao và công nợ'),
+          subtitle: const Text(
+            'Trước/quá giờ giao, công nợ; 20h chuẩn bị đơn ngày mai, '
+            '6h đi chợ hoa, 7 ngày trước dịp lễ',
+          ),
           value: remindersEnabled,
           onChanged: updatingReminders ? null : toggleReminders,
         ),
@@ -1450,14 +1528,19 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
         children: [
           TemplateIconBadge(icon: icon),
           const SizedBox(height: 14),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: context.palette.ink,
+          // Money must never be cut off: shrink to fit with large system
+          // text instead of ending in "…".
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: context.palette.ink,
+              ),
             ),
           ),
           const SizedBox(height: 5),

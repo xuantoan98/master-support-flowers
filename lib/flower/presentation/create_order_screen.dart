@@ -53,8 +53,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   PaymentMethod depositMethod = PaymentMethod.cash;
   List<FlowerComponent> components = [];
   List<OrderItem> selectedItems = [];
-  DateTime delivery = DateTime.now().add(const Duration(days: 1));
+  DateTime delivery = roundUpToHalfHour(
+    DateTime.now().add(const Duration(days: 1)),
+  );
   int step = 0;
+
+  /// The shop's past orders, for defaults and "order again".
+  List<FlowerOrder> _history = const [];
   bool saving = false;
   bool _saved = false;
   bool _dirty = false;
@@ -93,7 +98,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       if (widget.deliveryDay != null) {
         delivery = _deliveryOnDay(widget.deliveryDay!, delivery);
       }
-      _restoreDraft();
+      _restoreDraft().then((_) => _loadHistory());
     } else {
       name.text = initial.customerName;
       phone.text = initial.phone;
@@ -133,6 +138,60 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         }
       }
     });
+  }
+
+  Future<void> _loadHistory() async {
+    final List<FlowerOrder> orders;
+    try {
+      orders = await widget.repository.all();
+    } catch (_) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _history = orders;
+      // Start a fresh order with the fee the shop usually charges.
+      if (!_hasDraft && !_dirty && (parseMoney(shipping.text) ?? 0) == 0) {
+        final fee = usualShippingFee(orders);
+        if (fee > 0) {
+          shipping.text = formatCurrencyInput(fee, Intl.getCurrentLocale());
+        }
+      }
+    });
+  }
+
+  /// The selected customer's previous order, offered as "order again".
+  FlowerOrder? get _previousOrder => widget.initialOrder == null
+      ? lastOrderOf(_history, name.text, phone.text)
+      : null;
+
+  void _orderAgain(FlowerOrder previous) {
+    setState(() {
+      selectedItems = List.of(previous.effectiveItems);
+      fulfillment = previous.fulfillment == FulfillmentType.counter
+          ? FulfillmentType.pickup
+          : previous.fulfillment;
+      address.text = previous.address;
+      isGift = previous.isGift;
+      recipientName.text = previous.recipientName;
+      recipientPhone.text = previous.recipientPhone;
+      anonymousSender = previous.anonymousSender;
+      if (fulfillment == FulfillmentType.delivery) {
+        shipping.text = formatCurrencyInput(
+          previous.shippingFee,
+          Intl.getCurrentLocale(),
+        );
+      }
+    });
+    _scheduleDraftSave();
+    AppToast.show(
+      context,
+      'Đã điền như đơn ${DateFormat('dd/MM', 'vi').format(previous.deliveryAt)}. '
+      'Hãy chọn ngày giờ giao.',
+      isError: false,
+    );
   }
 
   Future<void> _restoreDraft() async {
@@ -303,12 +362,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       anonymousSender = false;
       discountPercent = false;
       depositMethod = PaymentMethod.cash;
-      shipping.text = '0';
+      final fee = usualShippingFee(_history);
+      shipping.text = fee > 0
+          ? formatCurrencyInput(fee, Intl.getCurrentLocale())
+          : '0';
       paid.text = '0';
       components = [];
       selectedItems = [];
       delivery = widget.deliveryDay == null
-          ? DateTime.now().add(const Duration(days: 1))
+          ? roundUpToHalfHour(DateTime.now().add(const Duration(days: 1)))
           : _deliveryOnDay(widget.deliveryDay!, DateTime.now());
       _deliveryWasValid = true;
       step = 0;
@@ -489,7 +551,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   bool get reviewing => step == _reviewStep;
 
-  String? validateStep() => switch (step) {
+  String? validateStep([int? at]) => switch (at ?? step) {
     0 when name.text.trim().isEmpty => 'Vui lòng nhập tên khách hàng',
     1 when selectedItems.isEmpty && product.text.trim().isEmpty =>
       'Vui lòng thêm sản phẩm',
@@ -516,6 +578,32 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       'Tiền đã thu không vượt quá tổng',
     _ => null,
   };
+
+  /// True when every step from here to payment is already valid, so the
+  /// shop can jump to the summary without paging through defaults.
+  bool get canReviewEarly {
+    if (widget.initialOrder != null || step == 0 || step >= 3) {
+      return false;
+    }
+    final hasItems = selectedItems.isNotEmpty || product.text.trim().isNotEmpty;
+    if (!hasItems) {
+      return false;
+    }
+    for (var s = 0; s <= 3; s++) {
+      if (validateStep(s) != null) {
+        return false;
+      }
+    }
+    return deliveryIssue() == null;
+  }
+
+  void reviewNow() {
+    if (product.text.trim().isNotEmpty) {
+      addManualProduct();
+    }
+    setState(() => step = _reviewStep);
+    _scheduleDraftSave();
+  }
 
   Future<void> next() async {
     final issue = validateStep();
@@ -605,61 +693,24 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   Future<void> chooseProduct() async {
     try {
-      final products = await widget.repository.listProducts();
+      final all = await widget.repository.listProducts();
       if (!mounted) {
         return;
       }
+      final products = all.where((p) => !p.soldOut).toList();
       if (products.isEmpty) {
-        AppToast.show(context, 'Catalog chưa có mẫu hoa');
+        AppToast.show(
+          context,
+          all.isEmpty
+              ? 'Catalog chưa có mẫu hoa'
+              : 'Các mẫu hoa đều đang tạm hết',
+        );
         return;
       }
       final selected = await showModalBottomSheet<CatalogProduct>(
         context: context,
         isScrollControlled: true,
-        builder: (sheetContext) => SafeArea(
-          child: SizedBox(
-            height: MediaQuery.sizeOf(sheetContext).height * 0.72,
-            child: Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
-                  child: TemplateSectionHeading(
-                    eyebrow: 'BỘ SƯU TẬP',
-                    title: 'Chọn mẫu hoa',
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    children: [
-                      for (final item in products)
-                        Card(
-                          child: ListTile(
-                            leading: CatalogProductImage(
-                              path: item.imagePath,
-                              size: 64,
-                            ),
-                            title: Text(
-                              item.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            subtitle: Text(money(item.price)),
-                            trailing: Icon(
-                              Icons.add_circle_outline,
-                              color: context.palette.primary,
-                            ),
-                            onTap: () => Navigator.pop(sheetContext, item),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        builder: (sheetContext) => _ProductPickerSheet(products: products),
       );
       if (selected == null || !mounted) {
         return;
@@ -676,7 +727,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           selectedItems.add(
             OrderItem(
               catalogProductId: selected.id,
-              name: selected.name,
+              name: selected.displayName,
               unitPrice: selected.price,
               components: List.of(selected.components),
             ),
@@ -936,6 +987,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                             },
                           ),
                       ],
+                      if (step == 0 && _previousOrder != null)
+                        _orderAgainCard(_previousOrder!),
                       if (step == 0) ..._giftFields(),
                       if (step == 1) ...[
                         OutlinedButton.icon(
@@ -1121,6 +1174,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                               onTap: pickDeliveryTime,
                             ),
                           ),
+                          _deliverySlots(),
                         ],
                         const SizedBox(height: 14),
                         if (delivers)
@@ -1165,6 +1219,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                           keyboard: TextInputType.number,
                           enabled: widget.initialOrder == null,
                         ),
+                        if (widget.initialOrder == null && orderTotal > 0)
+                          _quickDeposit(),
                         if (widget.initialOrder == null &&
                             (parseMoney(paid.text) ?? 0) > 0)
                           PaymentMethodChips(
@@ -1197,6 +1253,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                           ),
                         ),
                       ],
+                      if (canReviewEarly)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: OutlinedButton.icon(
+                            onPressed: saving ? null : reviewNow,
+                            icon: const Icon(Icons.fact_check_outlined),
+                            label: const Text('Đủ thông tin · Xem lại đơn'),
+                          ),
+                        ),
                       if (reviewing) ..._reviewContent(),
                     ],
                   ),
@@ -1486,7 +1551,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 title,
                 style: TextStyle(
                   color: context.palette.accent,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
                 ),
@@ -1545,6 +1610,95 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
     ],
   );
+
+  Widget _orderAgainCard(FlowerOrder previous) => Card(
+    child: ListTile(
+      leading: Icon(Icons.replay_rounded, color: context.palette.primary),
+      title: Text(
+        'Lần trước · ${DateFormat('dd/MM', 'vi').format(previous.deliveryAt)}',
+      ),
+      subtitle: Text(
+        '${previous.productName} · ${money(previous.total)}'
+        '${previous.isGift ? ' · tặng ${previous.recipientName}' : ''}',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: TextButton(
+        onPressed: () => _orderAgain(previous),
+        child: const Text('Đặt lại'),
+      ),
+    ),
+  );
+
+  /// Morning / noon / afternoon / evening in one tap; slots already past
+  /// on the chosen day are disabled.
+  Widget _deliverySlots() {
+    DateTime at(int hour) =>
+        DateTime(delivery.year, delivery.month, delivery.day, hour);
+    final chosen = deliverySlots
+        .where((slot) => delivery == at(slot.hour))
+        .map((slot) => slot.hour)
+        .toSet();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<int>(
+          emptySelectionAllowed: true,
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            padding: WidgetStatePropertyAll(EdgeInsets.zero),
+          ),
+          segments: [
+            for (final slot in deliverySlots)
+              ButtonSegment(
+                value: slot.hour,
+                enabled: deliveryTimeIssue(at(slot.hour)) == null,
+                tooltip: '${slot.label} ${slot.hour}:00',
+                label: Text('${slot.label} ${slot.hour}h', maxLines: 1),
+              ),
+          ],
+          selected: chosen,
+          onSelectionChanged: (selection) {
+            if (selection.isEmpty) {
+              return;
+            }
+            setState(() => delivery = at(selection.single));
+            _scheduleDraftSave();
+          },
+        ),
+      ),
+    );
+  }
+
+  /// One tap for the usual amounts: nothing yet, half, or everything.
+  Widget _quickDeposit() {
+    final current = parseMoney(paid.text) ?? 0;
+    final half = depositHalf(orderTotal);
+    Widget chip(String label, int amount) => ChoiceChip(
+      label: Text(label),
+      selected: current == amount,
+      onSelected: (_) {
+        setState(() {
+          paid.text = formatCurrencyInput(amount, Intl.getCurrentLocale());
+        });
+        _scheduleDraftSave();
+      },
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          chip('Chưa thu', 0),
+          if (half > 0 && half < orderTotal) chip('Cọc 50%', half),
+          chip('Thu đủ', orderTotal),
+        ],
+      ),
+    );
+  }
 
   Widget _field(
     TextEditingController controller,
@@ -1635,6 +1789,110 @@ class _ManualQuantityStepper extends StatelessWidget {
             icon: const Icon(Icons.add_rounded),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Catalog picker with search and category filter; sold-out products are
+/// already left out by the caller.
+class _ProductPickerSheet extends StatefulWidget {
+  const _ProductPickerSheet({required this.products});
+
+  final List<CatalogProduct> products;
+
+  @override
+  State<_ProductPickerSheet> createState() => _ProductPickerSheetState();
+}
+
+class _ProductPickerSheetState extends State<_ProductPickerSheet> {
+  final search = TextEditingController();
+  ProductCategory? category;
+
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final used = ProductCategory.values
+        .where((c) => widget.products.any((p) => p.category == c))
+        .toList();
+    final shown = widget.products
+        .where(
+          (p) =>
+              (category == null || p.category == category) &&
+              p.matches(search.text),
+        )
+        .toList();
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.8,
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 24, 24, 12),
+              child: TemplateSectionHeading(
+                eyebrow: 'BỘ SƯU TẬP',
+                title: 'Chọn mẫu hoa',
+              ),
+            ),
+            if (widget.products.length > 6)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  controller: search,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Tìm tên mẫu, loại hoa',
+                  ),
+                ),
+              ),
+            if (used.length > 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: CategoryFilter(
+                  categories: used,
+                  value: category,
+                  onChanged: (value) => setState(() => category = value),
+                ),
+              ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                children: [
+                  if (shown.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('Không có mẫu phù hợp'),
+                    ),
+                  for (final item in shown)
+                    Card(
+                      child: ListTile(
+                        leading: CatalogProductImage(
+                          path: item.imagePath,
+                          size: 64,
+                        ),
+                        title: Text(
+                          item.displayName,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(money(item.price)),
+                        trailing: Icon(
+                          Icons.add_circle_outline,
+                          color: context.palette.primary,
+                        ),
+                        onTap: () => Navigator.pop(context, item),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

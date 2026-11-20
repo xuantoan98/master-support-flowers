@@ -68,10 +68,17 @@ class OrderReminderService {
     if (!enabled) {
       return;
     }
-    final reminders = planOrderReminders(orders, now: DateTime.now());
-    for (final reminder in reminders) {
+    final now = DateTime.now();
+    final reminders = [
+      for (final r in planOrderReminders(orders, now: now))
+        (id: r.notificationId, at: r.at, title: r.title, body: r.body),
+      for (final r in planDailyReminders(orders, now: now))
+        (id: r.notificationId, at: r.at, title: r.title, body: r.body),
+    ]..sort((a, b) => a.at.compareTo(b.at));
+    // iOS keeps only the nearest 64 pending local notifications.
+    for (final reminder in reminders.take(60)) {
       await _plugin.zonedSchedule(
-        id: reminder.notificationId,
+        id: reminder.id,
         title: reminder.title,
         body: reminder.body,
         scheduledDate: tz.TZDateTime.from(reminder.at.toUtc(), tz.UTC),
@@ -79,7 +86,7 @@ class OrderReminderService {
           android: AndroidNotificationDetails(
             'flower_orders',
             'Nhắc đơn hoa',
-            channelDescription: 'Giờ giao hàng và công nợ đơn hoa',
+            channelDescription: 'Giờ giao, công nợ, chuẩn bị đơn và đi chợ hoa',
           ),
           iOS: DarwinNotificationDetails(),
         ),

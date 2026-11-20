@@ -27,7 +27,7 @@ class TemplateSectionHeading extends StatelessWidget {
                 eyebrow!,
                 style: TextStyle(
                   color: context.palette.accent,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
                 ),

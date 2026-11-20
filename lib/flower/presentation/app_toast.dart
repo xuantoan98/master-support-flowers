@@ -13,10 +13,15 @@ class AppToast {
 
   static const visibleFor = Duration(seconds: 3);
 
+  /// Longer, so there is time to reach the action button.
+  static const visibleWithActionFor = Duration(seconds: 5);
+
   static void show(
     BuildContext context,
     String message, {
     bool isError = true,
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
     _timer?.cancel();
     _dismissCurrent();
@@ -37,6 +42,14 @@ class AppToast {
           key: key,
           message: message,
           isError: isError,
+          actionLabel: onAction == null ? null : actionLabel,
+          onAction: onAction == null
+              ? null
+              : () {
+                  _timer?.cancel();
+                  _dismissCurrent();
+                  onAction();
+                },
           onHidden: () {
             if (entry.mounted) {
               entry.remove();
@@ -53,7 +66,10 @@ class AppToast {
     _entry = entry;
     _key = key;
     overlay.insert(entry);
-    _timer = Timer(visibleFor, _dismissCurrent);
+    _timer = Timer(
+      onAction == null ? visibleFor : visibleWithActionFor,
+      _dismissCurrent,
+    );
   }
 
   static void _dismissCurrent() {
@@ -78,10 +94,14 @@ class _ToastView extends StatefulWidget {
     required this.message,
     required this.isError,
     required this.onHidden,
+    this.actionLabel,
+    this.onAction,
   });
 
   final String message;
   final bool isError;
+  final String? actionLabel;
+  final VoidCallback? onAction;
   final VoidCallback onHidden;
 
   @override
@@ -128,6 +148,7 @@ class _ToastViewState extends State<_ToastView>
         : FlowerTemplateTheme.deepSage;
     final foreground = widget.isError ? FlowerTemplateTheme.navy : Colors.white;
     return IgnorePointer(
+      ignoring: widget.onAction == null,
       child: FadeTransition(
         opacity: controller,
         child: SlideTransition(
@@ -165,6 +186,20 @@ class _ToastViewState extends State<_ToastView>
                           style: TextStyle(color: foreground),
                         ),
                       ),
+                      if (widget.onAction != null) ...[
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: widget.onAction,
+                          style: TextButton.styleFrom(
+                            foregroundColor: foreground,
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                          child: Text(widget.actionLabel ?? 'Hoàn tác'),
+                        ),
+                      ],
                     ],
                   ),
                 ),

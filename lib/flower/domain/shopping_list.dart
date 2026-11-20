@@ -53,3 +53,37 @@ ShoppingList buildShoppingList(
     ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   return ShoppingList(items: items, ordersWithoutRecipe: missing);
 }
+
+/// Orders in the period that need [item], with how many of it each needs.
+List<(FlowerOrder, int)> ordersNeeding(
+  Iterable<FlowerOrder> orders,
+  ShoppingItem item,
+  DateTime start,
+  DateTime end,
+) {
+  final result = <(FlowerOrder, int)>[];
+  for (final order in orders) {
+    if (order.status == OrderStatus.cancelled ||
+        order.status == OrderStatus.delivered ||
+        order.deliveryAt.isBefore(start) ||
+        !order.deliveryAt.isBefore(end)) {
+      continue;
+    }
+    final count = order.components
+        .where(
+          (c) =>
+              '${c.name.trim().toLowerCase()}|${c.unit.trim().toLowerCase()}' ==
+              item.key,
+        )
+        .fold(0, (sum, c) => sum + c.quantity);
+    if (count > 0) {
+      result.add((order, count));
+    }
+  }
+  result.sort((a, b) => a.$1.deliveryAt.compareTo(b.$1.deliveryAt));
+  return result;
+}
+
+/// Bought already covers what is needed now.
+bool shoppingDone(ShoppingItem item, int? bought) =>
+    bought != null && bought >= item.quantity;

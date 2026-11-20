@@ -153,12 +153,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
   }
 
   Future<void> pickBank() async {
-    final chosen = await showModalBottomSheet<VnBank>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _BankPickerSheet(selectedBin: bankBin),
-    );
+    final chosen = await showBankPicker(context, selectedBin: bankBin);
     if (chosen != null && mounted) {
       setState(() {
         bankBin = chosen.bin;
@@ -322,6 +317,17 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
 
 /// Searchable bank list. Owns its search field so the field lives exactly as
 /// long as the sheet, including its closing animation.
+/// Searchable list of Vietnamese banks (NAPAS BIN) in a bottom sheet.
+Future<VnBank?> showBankPicker(
+  BuildContext context, {
+  String selectedBin = '',
+}) => showModalBottomSheet<VnBank>(
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (_) => _BankPickerSheet(selectedBin: selectedBin),
+);
+
 class _BankPickerSheet extends StatefulWidget {
   const _BankPickerSheet({required this.selectedBin});
 

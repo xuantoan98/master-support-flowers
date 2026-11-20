@@ -176,3 +176,33 @@ OccasionWindow? currentOccasion(DateTime now) {
   }
   return null;
 }
+
+extension FlowerOccasionName on FlowerOccasion {
+  String get label => switch (this) {
+    FlowerOccasion.tet => 'Tết Nguyên Đán',
+    FlowerOccasion.valentine => 'Valentine 14/2',
+    FlowerOccasion.womensDay => 'Quốc tế Phụ nữ 8/3',
+    FlowerOccasion.vietnameseWomensDay => 'Phụ nữ Việt Nam 20/10',
+    FlowerOccasion.teachersDay => 'Nhà giáo Việt Nam 20/11',
+  };
+}
+
+/// The big flower days from [from] (inclusive) onwards, nearest first.
+List<(FlowerOccasion, DateTime)> upcomingOccasions(
+  DateTime from, {
+  int withinDays = 400,
+}) {
+  final start = dateOnly(from);
+  final end = start.add(Duration(days: withinDays));
+  final days = <(FlowerOccasion, DateTime)>[
+    for (final year in [start.year, start.year + 1]) ...[
+      (FlowerOccasion.valentine, DateTime(year, 2, 14)),
+      (FlowerOccasion.womensDay, DateTime(year, 3, 8)),
+      (FlowerOccasion.vietnameseWomensDay, DateTime(year, 10, 20)),
+      (FlowerOccasion.teachersDay, DateTime(year, 11, 20)),
+    ],
+    for (final day in _tetDays) (FlowerOccasion.tet, day),
+  ];
+  return days.where((d) => !d.$2.isBefore(start) && !d.$2.isAfter(end)).toList()
+    ..sort((a, b) => a.$2.compareTo(b.$2));
+}

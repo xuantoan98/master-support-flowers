@@ -35,6 +35,13 @@ FlowerOrder _order({
 );
 
 void main() {
+  test('half deposit rounds up to the next thousand', () {
+    expect(depositHalf(180000), 90000);
+    expect(depositHalf(251000), 126000);
+    expect(depositHalf(1000), 1000);
+    expect(depositHalf(0), 0);
+  });
+
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;

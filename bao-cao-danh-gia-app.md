@@ -42,7 +42,7 @@ Mục tiêu: tiệm bán lẻ bán được mọi loại đơn phổ biến, kh�
 - [x] **Gọi / nhắn Zalo một chạm từ đơn**, gửi ảnh thành phẩm cho khách duyệt. Bước “Chờ duyệt” có sẵn nhưng chưa có cách gửi ảnh; trong code chưa có liên kết gọi điện.
 - [x] **Sắp lại điều hướng + màn “Hôm nay”:** đổi tab “Cá nhân” thành “Cửa hàng”; màn chính mở ra đơn cần làm theo giờ, đơn chưa thu đủ, hoa cần mua; lịch tháng thành màn phụ. Hiện Khách hàng, Mẫu hoa, Danh sách mua hoa bị giấu trong tab “Cá nhân”.
 
-**Trạng thái 20/11/2026:** đã code xong 9/9 mục, 104 test tự động đạt, build APK dev đạt (chi tiết trong `progress.md`). Còn lại là phần kiểm tra trên máy thật bên dưới.
+**Trạng thái 20/11/2026:** đã code xong 9/9 mục, 108 test tự động đạt, build APK dev đạt (chi tiết trong `progress.md`). Chủ shop đã kiểm thử trên Android: quét VietQR bằng app ngân hàng thật đạt, sao lưu/khôi phục đạt. **Phase 1 đóng trên Android**; build và QA iOS dời sang cuối Phase 2 (cùng QA phát hành).
 
 **Điều kiện xong Phase 1:** test migration cho các trường mới; chạy thử 1 tuần với 1–2 chủ tiệm thật, ghi lại thao tác chậm / thiếu.
 
@@ -50,18 +50,25 @@ Mục tiêu: tiệm bán lẻ bán được mọi loại đơn phổ biến, kh�
 
 Mục tiêu: thao tác nhanh hơn lúc đông khách, đúng nhịp làm việc của tiệm, sẵn sàng phát hành.
 
-- [ ] **Tạo đơn:** mặc định thông minh (phí giao hay dùng, giờ giao gần nhất); cho lưu sớm khi đủ dữ liệu; nút “Đặt lại như lần trước” từ lịch sử khách.
-- [ ] **Giờ giao:** cho chọn khung giờ (sáng, trưa, chiều, tối); cho ghi bù đơn đã bán trong ngày mà quên nhập.
-- [ ] **Thanh toán:** nút “Đã thu đủ” một chạm; gợi ý số tiền còn lại; cọc nhanh 50% / 100%.
-- [ ] **Hóa đơn:** thêm ảnh sản phẩm (logo tiệm để Pro).
-- [ ] **Mẫu hoa:** danh mục (bó, giỏ, hộp, kệ khai trương, hoa cưới, hoa tang), kích cỡ S/M/L, ẩn mẫu hết hoa, tìm kiếm.
-- [ ] **Khách hàng:** tổng chi tiêu, công nợ còn lại, các địa chỉ giao đã dùng (nhãn khách để Pro).
-- [ ] **Nhắc việc:** nhắc buổi tối “chuẩn bị đơn ngày mai”, nhắc sáng sớm đi chợ hoa kèm danh sách mua, nhắc 7 ngày trước dịp lễ lớn.
-- [ ] **Chi tiết đơn:** chạm địa chỉ mở bản đồ (ô nhập đã có, màn chi tiết chưa có).
-- [ ] **Vuốt đổi trạng thái:** gợi ý lần đầu + nút “Hoàn tác” trong toast.
-- [ ] **Cỡ chữ:** 14 chỗ đang dùng cỡ 9–11, nâng lên tối thiểu 12–13; kiểm tra với cỡ chữ hệ thống lớn.
-- [ ] **Thiết lập lần đầu:** wizard 3 bước — tên tiệm, tài khoản ngân hàng, chọn mẫu hoa gợi ý.
+- [x] **Tạo đơn:** mặc định thông minh (phí giao hay dùng, giờ giao gần nhất); cho lưu sớm khi đủ dữ liệu; nút “Đặt lại như lần trước” từ lịch sử khách.
+- [x] **Giờ giao:** cho chọn khung giờ (sáng, trưa, chiều, tối); cho ghi bù đơn đã bán trong ngày mà quên nhập.
+- [x] **Thanh toán:** nút “Đã thu đủ” một chạm; gợi ý số tiền còn lại; cọc nhanh 50% / 100%.
+- [x] **Hóa đơn:** thêm ảnh sản phẩm (logo tiệm để Pro).
+- [x] **Mẫu hoa:** danh mục (bó, giỏ, hộp, kệ khai trương, hoa cưới, hoa tang), kích cỡ S/M/L, ẩn mẫu hết hoa, tìm kiếm.
+- [x] **Khách hàng:** tổng chi tiêu, công nợ còn lại, các địa chỉ giao đã dùng (nhãn khách để Pro).
+- [x] **Nhắc việc:** nhắc buổi tối “chuẩn bị đơn ngày mai”, nhắc sáng sớm đi chợ hoa kèm danh sách mua, nhắc 7 ngày trước dịp lễ lớn.
+- [x] **Chi tiết đơn:** chạm địa chỉ mở bản đồ (ô nhập đã có, màn chi tiết chưa có).
+- [x] **Vuốt đổi trạng thái:** gợi ý lần đầu + nút “Hoàn tác” trong toast.
+- [x] **Danh sách mua hoa dễ hiểu hơn:** dòng hướng dẫn ô tích, dòng đã mua gạch ngang và xuống cuối, ghi “đã mua 8, cần thêm 10” khi có thêm đơn, chạm dòng xem các đơn dùng loại hoa đó. (Làm tròn theo bó, hao hụt, gửi mối hàng vẫn là Pro ở Phase 4.)
+- [x] **Cỡ chữ:** 14 chỗ đang dùng cỡ 9–11, nâng lên tối thiểu 12–13; kiểm tra với cỡ chữ hệ thống lớn.
+- [x] **Thiết lập lần đầu:** wizard 3 bước — tên tiệm, tài khoản ngân hàng, chọn mẫu hoa gợi ý.
 - [ ] **Việc phát hành còn mở trong `progress.md`:** keystore thật, mục P0 còn lại của `SECURITY_REPORT.md`, QA iOS, chính sách quyền riêng tư (Goong).
+
+**Trạng thái 20/11/2026:** code xong 12/13 mục, 125 test đạt, đã xem trên Redmi (trừ màn thiết lập lần đầu: máy đang có dữ liệu nên không hiện, mới kiểm bằng test). Mục phát hành còn mở, cần chủ shop:
+- Tạo keystore thật và `android/key.properties` (bản prod đã chặn ký bằng debug key).
+- Mục #2 `SECURITY_REPORT.md` (file Firebase của template trong git): chủ shop đang tạm hoãn.
+- QA iOS trên máy Mac + iPhone (gồm bỏ `NSLocalNetworkUsageDescription` khỏi bản release, mục #10).
+- `PRIVACY_POLICY.md` đã viết theo đúng hành vi app; cần điền tên/email nhà phát triển và đăng lên một trang web công khai.
 
 **Điều kiện xong Phase 2:** QA Android + iOS → **phát hành bản miễn phí**.
 

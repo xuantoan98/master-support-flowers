@@ -39,7 +39,7 @@ class OrderRepository {
 
   /// Schema version written by this build; backups from newer builds are
   /// refused on restore.
-  static const schemaVersion = 14;
+  static const schemaVersion = 15;
 
   /// File of the open database, used by backup and restore.
   String? get databasePath => _path;
@@ -101,6 +101,7 @@ class OrderRepository {
         await _createDraftTable(db);
         await _createCatalogTables(db);
         await _seedCatalog(db);
+        await _addProductRetailColumns(db);
         await _createMediaTable(db);
         await _createShoppingTable(db);
         await _createOrderChangesTable(db);
@@ -202,8 +203,46 @@ class OrderRepository {
         if (oldVersion < 14) {
           await _addOrderRetailColumns(db);
         }
+        if (oldVersion < 15) {
+          await _addProductRetailColumns(db);
+        }
       },
     );
+  }
+
+  /// v15: catalog category, size and "temporarily sold out".
+  Future<void> _addProductRetailColumns(DatabaseExecutor db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(products)');
+    if (columns.isEmpty) {
+      // Very old test schemas without a catalog: nothing to extend.
+      return;
+    }
+    Future<void> addColumn(String column, String ddl) async {
+      if (!columns.any((c) => c['name'] == column)) {
+        await db.execute('ALTER TABLE products ADD COLUMN $column $ddl');
+      }
+    }
+
+    await addColumn('category', "TEXT NOT NULL DEFAULT ''");
+    await addColumn('size', "TEXT NOT NULL DEFAULT ''");
+    await addColumn('sold_out', 'INTEGER NOT NULL DEFAULT 0');
+    // Existing products: guess the category from the name.
+    final rows = await db.query(
+      'products',
+      columns: ['id', 'name'],
+      where: "category = ''",
+    );
+    for (final row in rows) {
+      final guess = ProductCategory.guess(row['name']! as String);
+      if (guess != null) {
+        await db.update(
+          'products',
+          {'category': guess.key},
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
+    }
   }
 
   /// v14: gift orders, hand-over kind, discounts and payment methods.
@@ -294,6 +333,61 @@ class OrderRepository {
       whereArgs: ['skip_approval'],
     );
     return rows.isNotEmpty && rows.first['value'] == '1';
+  }
+
+  /// Whether the first-run setup has been finished or skipped.
+  Future<bool> setupDone() async {
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['setup_done'],
+    );
+    return rows.isNotEmpty && rows.first['value'] == '1';
+  }
+
+  Future<void> setSetupDone() async {
+    await db.insert('app_settings', {
+      'key': 'setup_done',
+      'value': '1',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// A brand-new install: setup not done, no orders and the default name.
+  /// Shops that used the app before setup existed are marked done.
+  Future<bool> needsSetup() async {
+    if (await setupDone()) {
+      return false;
+    }
+    final orders =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM orders'),
+        ) ??
+        0;
+    final profile = await loadShopProfile();
+    if (orders > 0 || profile.name != const ShopProfile().name) {
+      await setSetupDone();
+      return false;
+    }
+    return true;
+  }
+
+  /// Whether the shop has learned to swipe an order card to its next step.
+  Future<bool> swipeHintSeen() async {
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['swipe_hint_seen'],
+    );
+    return rows.isNotEmpty && rows.first['value'] == '1';
+  }
+
+  Future<void> setSwipeHintSeen() async {
+    await db.insert('app_settings', {
+      'key': 'swipe_hint_seen',
+      'value': '1',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> setSkipApproval(bool enabled) async {
@@ -648,6 +742,9 @@ class OrderRepository {
           name: row['name']! as String,
           price: row['price']! as int,
           imagePath: row['image_path']! as String,
+          category: ProductCategory.parse(row['category']),
+          size: row['size'] as String? ?? '',
+          soldOut: (row['sold_out'] as int? ?? 0) == 1,
           components: flowerRows
               .map(
                 (flower) => FlowerComponent(
@@ -676,6 +773,9 @@ class OrderRepository {
         'image_path': product.imagePath.trim().isEmpty
             ? _randomPlaceholder()
             : product.imagePath.trim(),
+        'category': product.category?.key ?? '',
+        'size': product.size,
+        'sold_out': product.soldOut ? 1 : 0,
         'updated_at': DateTime.now().toIso8601String(),
       };
       final int id;
@@ -709,6 +809,15 @@ class OrderRepository {
       }
       return id;
     });
+  }
+
+  Future<void> setProductSoldOut(int id, bool soldOut) async {
+    await db.update(
+      'products',
+      {'sold_out': soldOut ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> archiveProduct(int id) async {

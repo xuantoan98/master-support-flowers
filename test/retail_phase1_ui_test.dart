@@ -5,6 +5,7 @@ import 'package:flower_orders/flower/domain/order_media.dart';
 import 'package:flower_orders/flower/domain/shop_profile.dart';
 import 'package:flower_orders/flower/presentation/flower_app.dart';
 import 'package:flower_orders/flower/presentation/shop_profile_screen.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -19,6 +20,13 @@ class RetailFakeRepository extends OrderRepository {
   final statuses = <OrderStatus>[];
   bool skip = false;
   Map<String, dynamic>? draft;
+  bool hintSeen = true;
+
+  @override
+  Future<bool> swipeHintSeen() async => hintSeen;
+
+  @override
+  Future<void> setSwipeHintSeen() async => hintSeen = true;
 
   @override
   Future<bool> remindersEnabled() async => false;
@@ -245,6 +253,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Tổng: 180.000 đ'), findsOneWidget);
+    // Quick deposit: half of 180.000 đ.
+    await reveal(tester, find.text('Cọc 50%'));
+    await tester.tap(find.text('Cọc 50%'));
+    await tester.pumpAndSettle();
+    expect(find.text('Còn lại: 90.000 đ'), findsOneWidget);
     await tester.tap(find.text('Tiếp tục'));
     await tester.pumpAndSettle();
     expect(find.text('Khách tới lấy'), findsOneWidget);
@@ -264,6 +277,7 @@ void main() {
     expect(order.cardMessage, 'Chúc mừng sinh nhật');
     expect(order.discount, 20000);
     expect(order.total, 180000);
+    expect(order.paid, 90000);
   });
 
   testWidgets('today shows work, money owed and flowers for tomorrow', (
@@ -312,8 +326,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.bySemanticsLabel('Gọi Lan'), findsOneWidget);
-    expect(find.bySemanticsLabel('Nhắn Zalo cho Lan'), findsOneWidget);
+    expect(find.byTooltip('Gọi Lan'), findsOneWidget);
+    expect(find.byTooltip('Nhắn Zalo cho Lan'), findsOneWidget);
 
     await reveal(tester, find.text('Quay lại: Mới'));
     final skip = find.text('Bỏ qua chờ duyệt → Đang giao');
@@ -348,5 +362,74 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Techcombank'), findsOneWidget);
     expect(find.text('Kỹ thương Việt Nam'), findsOneWidget);
+  });
+
+  testWidgets('call and Zalo icons follow the platform', (tester) async {
+    Future<void> pumpOn(TargetPlatform platform) => tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: platform),
+        home: OrderDetailScreen(
+          order: _order(
+            deliveryAt: DateTime(2026, 11, 20),
+            phone: '0901234567',
+          ),
+          repository: RetailFakeRepository(),
+          onChanged: () async {},
+        ),
+      ),
+    );
+    await pumpOn(TargetPlatform.iOS);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(CupertinoIcons.phone), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.chat_bubble), findsOneWidget);
+
+    await pumpOn(TargetPlatform.android);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.call_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.chat_bubble_outline), findsOneWidget);
+
+    // Both are round, outlined buttons.
+    final call = tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.call_outlined),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(call.style?.shape?.resolve({}), isA<CircleBorder>());
+    expect(call.style?.side?.resolve({}), isNotNull);
+  });
+
+  testWidgets('first swipe shows a hint, then undo puts the order back', (
+    tester,
+  ) async {
+    final repository = RetailFakeRepository([
+      _order(
+        deliveryAt: DateUtils.dateOnly(
+          DateTime.now(),
+        ).add(const Duration(hours: 23, minutes: 59)),
+      ),
+    ])..hintSeen = false;
+    await tester.pumpWidget(FlowerApp(repository: repository));
+    await tester.pumpAndSettle();
+    expect(find.text('Vuốt thẻ đơn sang phải để chuyển bước'), findsOneWidget);
+
+    // Bring the card above the floating navigation bar first.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    await tester.timedDrag(
+      find.byType(Dismissible).first,
+      const Offset(600, 0),
+      const Duration(milliseconds: 400),
+    );
+    await tester.pumpAndSettle();
+    expect(repository.statuses, [OrderStatus.making]);
+    expect(repository.hintSeen, isTrue);
+    expect(find.text('Vuốt thẻ đơn sang phải để chuyển bước'), findsNothing);
+
+    await tester.tap(find.text('Hoàn tác'));
+    await tester.pumpAndSettle();
+    expect(repository.statuses, [OrderStatus.making, OrderStatus.newOrder]);
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
   });
 }

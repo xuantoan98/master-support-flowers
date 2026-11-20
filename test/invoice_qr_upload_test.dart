@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flower_orders/flower/data/order_repository.dart';
 import 'package:flower_orders/flower/data/payment_qr_store.dart';
+import 'package:flower_orders/flower/domain/catalog_product.dart';
 import 'package:flower_orders/flower/domain/flower_order.dart';
+import 'package:flower_orders/flower/domain/order_item.dart';
 import 'package:flower_orders/flower/domain/shop_profile.dart';
 import 'package:flower_orders/flower/presentation/invoice_screen.dart';
 import 'package:flutter/material.dart';
@@ -172,12 +174,76 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     directory.deleteSync(recursive: true);
   });
+
+  testWidgets('invoice shows the catalog photo of the product', (tester) async {
+    final directory = Directory.systemTemp.createTempSync('flower_invoice_');
+    final photo = File('${directory.path}/bo.png')
+      ..writeAsBytesSync(
+        base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+        ),
+      );
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InvoiceScreen(
+            repository: _InvoiceRepository(
+              const ShopProfile(name: 'Tiệm Lan'),
+              products: [
+                CatalogProduct(
+                  id: 7,
+                  name: 'Bó hồng',
+                  price: 200000,
+                  imagePath: photo.path,
+                ),
+              ],
+            ),
+            order: FlowerOrder(
+              id: 1,
+              customerName: 'Mai',
+              phone: '',
+              productName: 'Bó hồng',
+              price: 200000,
+              shippingFee: 0,
+              paid: 200000,
+              deliveryAt: DateTime(2026, 11, 20, 9),
+              address: '12 Hoa Mai',
+              items: const [
+                OrderItem(
+                  catalogProductId: 7,
+                  name: 'Bó hồng',
+                  unitPrice: 200000,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is FileImage &&
+            (widget.image as FileImage).file.path == photo.path,
+      ),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    directory.deleteSync(recursive: true);
+  });
 }
 
 class _InvoiceRepository extends OrderRepository {
-  _InvoiceRepository(this.profile);
+  _InvoiceRepository(this.profile, {this.products = const []});
 
   final ShopProfile profile;
+  final List<CatalogProduct> products;
+
+  @override
+  Future<List<CatalogProduct>> listProducts() async => products;
 
   @override
   Future<ShopProfile> loadShopProfile() async => profile;

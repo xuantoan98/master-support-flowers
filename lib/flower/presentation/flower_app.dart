@@ -20,6 +20,7 @@ import '../domain/business_stats.dart';
 import '../domain/calendar_overview.dart';
 import '../domain/catalog_product.dart';
 import '../domain/flower_order.dart';
+import '../domain/order_defaults.dart';
 import '../domain/order_item.dart';
 import '../domain/order_media.dart';
 import '../domain/order_status_flow.dart';
@@ -40,6 +41,7 @@ import 'order_media_section.dart';
 import 'order_success.dart';
 import 'payment_method_chips.dart';
 import 'payment_qr.dart';
+import 'setup_wizard_screen.dart';
 import 'shop_profile_screen.dart';
 import 'shopping_list_screen.dart';
 import 'step_progress.dart';
@@ -98,10 +100,26 @@ class FlowerApp extends StatefulWidget {
 class _FlowerAppState extends State<FlowerApp> {
   final themeMode = ValueNotifier(ThemeMode.system);
 
+  /// Null while checking; true shows the first-run setup.
+  bool? needsSetup;
+
   @override
   void initState() {
     super.initState();
     _loadTheme();
+    _checkSetup();
+  }
+
+  Future<void> _checkSetup() async {
+    var value = false;
+    try {
+      value = await widget.repository.needsSetup();
+    } catch (_) {
+      // Without settings (or in tests) go straight to the app.
+    }
+    if (mounted) {
+      setState(() => needsSetup = value);
+    }
   }
 
   Future<void> _loadTheme() async {
@@ -138,7 +156,17 @@ class _FlowerAppState extends State<FlowerApp> {
         theme: FlowerTemplateTheme.light(),
         darkTheme: FlowerTemplateTheme.dark(),
         themeMode: mode,
-        home: FlowerHome(repository: widget.repository, themeMode: themeMode),
+        home: switch (needsSetup) {
+          null => const Scaffold(),
+          true => SetupWizardScreen(
+            repository: widget.repository,
+            onDone: () => setState(() => needsSetup = false),
+          ),
+          false => FlowerHome(
+            repository: widget.repository,
+            themeMode: themeMode,
+          ),
+        },
       ),
     );
   }

@@ -169,7 +169,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   'TRẠNG THÁI',
                   style: TextStyle(
                     color: palette.accent,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.5,
                   ),
@@ -357,17 +357,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ],
                 ),
                 const Divider(height: 28),
-                _line('Người đặt', order.customerName),
                 _line(
-                  'Số điện thoại',
-                  order.phone.isEmpty ? 'Chưa có' : order.phone,
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: ContactButtons(
+                  'Người đặt',
+                  order.customerName,
+                  trailing: ContactButtons(
                     name: order.customerName,
                     phone: order.phone,
                   ),
+                ),
+                _line(
+                  'Số điện thoại',
+                  order.phone.isEmpty ? 'Chưa có' : order.phone,
                 ),
                 if (order.isGift) ...[
                   _line(
@@ -376,17 +376,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       order.recipientName,
                       if (order.anonymousSender) '(ẩn tên người tặng)',
                     ].join(' '),
-                  ),
-                  if (order.recipientPhone.isNotEmpty) ...[
-                    _line('SĐT nhận', order.recipientPhone),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: ContactButtons(
-                        name: order.recipientName,
-                        phone: order.recipientPhone,
-                      ),
+                    trailing: ContactButtons(
+                      name: order.recipientName,
+                      phone: order.recipientPhone,
                     ),
-                  ],
+                  ),
+                  if (order.recipientPhone.isNotEmpty)
+                    _line('SĐT nhận', order.recipientPhone),
                 ],
                 _line('Hình thức', order.fulfillment.label),
                 _line(
@@ -397,7 +393,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   },
                   '${DateFormat('HH:mm', 'vi').format(order.deliveryAt)} · ${dayLabel(order.deliveryAt)}',
                 ),
-                if (order.needsAddress) _line('Địa chỉ', order.address),
+                if (order.needsAddress)
+                  _line(
+                    'Địa chỉ',
+                    order.address,
+                    trailing: MapButton(address: order.address),
+                  ),
                 if (order.cardMessage.isNotEmpty)
                   _line('Lời thiệp', '“${order.cardMessage}”'),
                 if (order.note.isNotEmpty) _line('Ghi chú', order.note),
@@ -699,10 +700,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
-  Widget _line(String label, String value) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
+  /// A label/value row; [trailing] (e.g. call and Zalo icons) sits at the
+  /// right end, centred on the row.
+  Widget _line(String label, String value, {Widget? trailing}) => Padding(
+    padding: EdgeInsets.only(bottom: trailing == null ? 12 : 4),
     child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: trailing == null
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
       children: [
         SizedBox(
           width: 105,
@@ -714,6 +719,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
+        ?trailing,
       ],
     ),
   );

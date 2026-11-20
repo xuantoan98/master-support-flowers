@@ -6,8 +6,10 @@ import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../data/order_media_store.dart';
 import '../data/order_repository.dart';
 import '../domain/flower_order.dart';
+import '../domain/order_media.dart';
 import '../domain/shop_profile.dart';
 import '../domain/vietqr.dart';
 import 'app_toast.dart';
@@ -33,6 +35,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   final invoiceKey = GlobalKey();
   ShopProfile? shop;
   bool qrExists = false;
+
+  /// A real photo of the flowers: the order's finished photo, else its
+  /// sample photo, else the catalog photo the shop took (not a placeholder).
+  File? productPhoto;
   bool loading = true;
   bool sharing = false;
   String? error;
@@ -49,8 +55,21 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       final imageExists =
           result.qrImagePath.isNotEmpty &&
           File(result.qrImagePath).existsSync();
+      final photo = await _findProductPhoto();
+      if (photo != null && mounted) {
+        try {
+          // Decode before the invoice can be captured as an image.
+          await precacheImage(
+            FileImage(photo),
+            context,
+            // A broken file falls back to the errorBuilder below.
+            onError: (_, _) {},
+          );
+        } catch (_) {}
+      }
       if (mounted) {
         setState(() {
+          productPhoto = photo;
           shop = result;
           qrExists = imageExists;
           loading = false;
@@ -65,6 +84,46 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         });
       }
     }
+  }
+
+  Future<File?> _findProductPhoto() async {
+    final order = widget.order;
+    try {
+      if (order.id != null) {
+        final media = await widget.repository.mediaForOrder(order.id!);
+        final store = OrderMediaStore(widget.repository);
+        for (final type in [OrderMediaType.finished, OrderMediaType.sample]) {
+          for (final item in media.reversed.where((m) => m.type == type)) {
+            final file = await store.fileFor(item);
+            if (file.existsSync()) {
+              return file;
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // No photos: the invoice works without one.
+    }
+    try {
+      final ids = order.effectiveItems
+          .map((item) => item.catalogProductId)
+          .whereType<int>()
+          .toSet();
+      if (ids.isEmpty) {
+        return null;
+      }
+      for (final product in await widget.repository.listProducts()) {
+        if (ids.contains(product.id) &&
+            product.imagePath.isNotEmpty &&
+            !product.imagePath.startsWith('assets/')) {
+          final file = File(product.imagePath);
+          if (file.existsSync()) {
+            return file;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// A QR is printed while money is still owed: the generated VietQR when
@@ -247,6 +306,18 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           }, DateFormat('HH:mm dd/MM/yyyy', 'vi').format(order.deliveryAt)),
           if (order.needsAddress) _row('Địa chỉ giao', order.address),
           const Divider(height: 28),
+          if (productPhoto != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.file(
+                productPhoto!,
+                height: 180,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           for (final item in order.effectiveItems)
             _row('${item.quantity} × ${item.name}', _money(item.total)),
           const Divider(height: 28),

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/address_suggester.dart';
 import 'app_toast.dart';
+import 'contact_actions.dart';
 import 'flower_template_theme.dart';
 
 /// Delivery address input with map suggestions. Picking a suggestion fills
@@ -122,11 +123,10 @@ class _AddressFieldState extends State<AddressField> {
   }
 
   Future<void> _openMap() async {
-    final uri = Uri.https('www.google.com', '/maps/search/', {
-      'api': '1',
-      'query': widget.controller.text.trim(),
-    });
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final opened = await launchUrl(
+      mapUri(widget.controller.text),
+      mode: LaunchMode.externalApplication,
+    );
     if (!opened && mounted) {
       AppToast.show(context, 'Không mở được bản đồ');
     }
@@ -218,7 +218,7 @@ class _AddressFieldState extends State<AddressField> {
                     child: Text(
                       'Gợi ý bởi Goong',
                       textAlign: TextAlign.end,
-                      style: TextStyle(fontSize: 10, color: palette.muted),
+                      style: TextStyle(fontSize: 12, color: palette.muted),
                     ),
                   ),
                 ],

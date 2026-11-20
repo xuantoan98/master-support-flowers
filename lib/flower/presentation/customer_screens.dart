@@ -115,13 +115,17 @@ class CustomerDetailScreen extends StatelessWidget {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final matching = snapshot.data!
-            .where(
-              (order) =>
-                  order.customerName == customer.name &&
-                  order.phone == customer.phone,
-            )
-            .toList();
+        final matching =
+            snapshot.data!
+                .where(
+                  (order) =>
+                      order.customerName == customer.name &&
+                      order.phone == customer.phone,
+                )
+                .toList()
+              ..sort((a, b) => b.deliveryAt.compareTo(a.deliveryAt));
+        final totals = customerTotals(matching);
+        final palette = context.palette;
         return ListView(
           padding: const EdgeInsets.all(24),
           children: [
@@ -139,8 +143,48 @@ class CustomerDetailScreen extends StatelessWidget {
                       ? 'Chưa có số điện thoại'
                       : customer.phone,
                 ),
+                trailing: ContactButtons(
+                  name: customer.name,
+                  phone: customer.phone,
+                ),
               ),
             ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _CustomerFigure(
+                    label: 'Tổng chi tiêu',
+                    value: money(totals.spent),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _CustomerFigure(
+                    label: 'Còn nợ',
+                    value: money(totals.owed),
+                    color: totals.owed > 0
+                        ? palette.adapt(const Color(0xFFB8692F))
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+            if (totals.addresses.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Địa chỉ đã giao',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              for (final address in totals.addresses)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.place_outlined),
+                    title: Text(address),
+                    trailing: MapButton(address: address),
+                  ),
+                ),
+            ],
             const SizedBox(height: 16),
             Text(
               '${matching.length} đơn đã đặt',
@@ -164,6 +208,41 @@ class CustomerDetailScreen extends StatelessWidget {
           ],
         );
       },
+    ),
+  );
+}
+
+class _CustomerFigure extends StatelessWidget {
+  const _CustomerFigure({required this.label, required this.value, this.color});
+
+  final String label;
+  final String value;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: color ?? context.palette.ink,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(color: context.palette.muted)),
+        ],
+      ),
     ),
   );
 }

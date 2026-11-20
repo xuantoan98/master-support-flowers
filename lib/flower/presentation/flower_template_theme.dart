@@ -113,6 +113,20 @@ abstract final class FlowerTemplateTheme {
               : BorderSide.none,
         ),
       ),
+      // Off switches: no track fill (it blended into the card), a clear
+      // outline and thumb instead. On state keeps the Material defaults.
+      switchTheme: SwitchThemeData(
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.selected) ? null : Colors.transparent,
+        ),
+        trackOutlineColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected) ? null : p.muted,
+        ),
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected) ? null : p.muted,
+        ),
+      ),
       listTileTheme: ListTileThemeData(
         iconColor: p.primary,
         textColor: p.ink,

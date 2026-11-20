@@ -175,13 +175,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  order.statusLabel,
-                  style: TextStyle(
-                    color: _statusColorOf(context, order.status),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                OrderStatusChip(order: order),
               ],
             ),
             const SizedBox(height: 14),
@@ -344,13 +338,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          Text(
-                            order.statusLabel,
-                            style: TextStyle(
-                              color: context.palette.primary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                          OrderStatusChip(order: order),
                         ],
                       ),
                     ),

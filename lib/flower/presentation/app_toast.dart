@@ -34,9 +34,11 @@ class AppToast {
     final key = GlobalKey<_ToastViewState>();
     late final OverlayEntry entry;
     entry = OverlayEntry(
+      // Near full width (lined up with the bottom dock); height follows the
+      // message.
       builder: (_) => Positioned(
-        left: 24,
-        right: 24,
+        left: 16,
+        right: 16,
         bottom: bottom,
         child: _ToastView(
           key: key,
@@ -166,11 +168,10 @@ class _ToastViewState extends State<_ToastView>
                 borderRadius: BorderRadius.circular(14),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 13,
+                    horizontal: 20,
+                    vertical: 12,
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         widget.isError
@@ -180,7 +181,7 @@ class _ToastViewState extends State<_ToastView>
                         size: 20,
                       ),
                       const SizedBox(width: 10),
-                      Flexible(
+                      Expanded(
                         child: Text(
                           widget.message,
                           style: TextStyle(color: foreground),
@@ -190,8 +191,17 @@ class _ToastViewState extends State<_ToastView>
                         const SizedBox(width: 8),
                         TextButton(
                           onPressed: widget.onAction,
+                          // Shrink-wrapped: the default 48 px tap target
+                          // made the toast much taller than its text.
                           style: TextButton.styleFrom(
                             foregroundColor: foreground,
+                            minimumSize: Size.zero,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
                             textStyle: const TextStyle(
                               fontWeight: FontWeight.w800,
                               decoration: TextDecoration.underline,

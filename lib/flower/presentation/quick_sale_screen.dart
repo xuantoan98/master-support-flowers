@@ -28,21 +28,62 @@ class _QuickSaleScreenState extends State<QuickSaleScreen> {
   /// Null means now.
   TimeOfDay? soldAt;
 
+  /// Same bottom-sheet wheel as the create-order time picker, capped at now.
   Future<void> pickSoldAt() async {
-    final now = TimeOfDay.now();
-    final picked = await showTimePicker(
+    final now = DateTime.now();
+    final today = DateUtils.dateOnly(now);
+    var candidate = soldAt == null
+        ? now
+        : today.add(Duration(hours: soldAt!.hour, minutes: soldAt!.minute));
+    final chosen = await showModalBottomSheet<DateTime>(
       context: context,
-      initialTime: soldAt ?? now,
-      helpText: 'Đơn đã bán lúc (hôm nay)',
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: 300,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Đơn đã bán lúc · Hôm nay',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(sheetContext, candidate),
+                      child: const Text('Xong'),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  maximumDate: now,
+                  initialDateTime: candidate,
+                  use24hFormat: true,
+                  onDateTimeChanged: (value) => candidate = value,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
-    if (picked == null || !mounted) {
+    if (chosen == null || !mounted) {
       return;
     }
-    if (picked.hour * 60 + picked.minute > now.hour * 60 + now.minute) {
+    if (chosen.hour * 60 + chosen.minute > now.hour * 60 + now.minute) {
       AppToast.show(context, 'Giờ bán không được sau bây giờ');
       return;
     }
-    setState(() => soldAt = picked);
+    setState(() => soldAt = TimeOfDay.fromDateTime(chosen));
   }
 
   @override

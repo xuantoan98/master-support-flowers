@@ -174,6 +174,8 @@ void main() {
     await tester.ensureVisible(cell);
     await tester.pumpAndSettle();
     await tester.tap(cell);
+    // The popup waits (at most 150 ms) for its photos to decode first.
+    await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
     expect(find.bySemanticsLabel(RegExp('^Mở đơn Lan, 23:59')), findsOneWidget);
     expect(find.textContaining('Chạm card để mở đơn'), findsOneWidget);

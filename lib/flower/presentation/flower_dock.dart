@@ -129,20 +129,19 @@ class _DockTab extends StatelessWidget {
         child: InkResponse(
           onTap: onTap,
           radius: 28,
+          // Active tab: no pill background, only the filled icon in the
+          // primary colour (same as the create button).
           child: Center(
-            child: AnimatedContainer(
+            child: TweenAnimationBuilder<Color?>(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
-              width: selected ? 52 : 44,
-              height: 40,
-              decoration: BoxDecoration(
-                color: selected ? palette.blush : Colors.transparent,
-                borderRadius: BorderRadius.circular(20),
+              tween: ColorTween(
+                end: selected ? palette.primary : palette.muted,
               ),
-              child: Icon(
+              builder: (context, color, _) => Icon(
                 selected ? item.selectedIcon : item.icon,
-                size: 24,
-                color: selected ? palette.onBlush : palette.muted,
+                size: 26,
+                color: color,
               ),
             ),
           ),

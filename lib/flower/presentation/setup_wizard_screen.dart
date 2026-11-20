@@ -210,6 +210,21 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
     ),
     const SizedBox(height: 8),
     const Text('Tên, số điện thoại và địa chỉ in trên hóa đơn gửi khách.'),
+    const SizedBox(height: 12),
+    Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.lock_outline, size: 18, color: context.palette.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Dữ liệu chỉ lưu trên máy này, không cần tài khoản '
+            'và không gửi lên máy chủ nào.',
+            style: TextStyle(fontSize: 13, color: context.palette.muted),
+          ),
+        ),
+      ],
+    ),
     const SizedBox(height: 18),
     TextField(
       controller: name,

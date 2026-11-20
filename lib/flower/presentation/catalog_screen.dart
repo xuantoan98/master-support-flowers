@@ -274,10 +274,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
         );
       },
     ),
-    floatingActionButton: FloatingActionButton.extended(
+    floatingActionButton: FloatingActionButton(
       onPressed: () => edit(null),
-      icon: const Icon(Icons.add),
-      label: const Text('Thêm mẫu'),
+      tooltip: 'Thêm mẫu',
+      child: const Icon(Icons.add),
     ),
   );
 }
@@ -400,8 +400,9 @@ class _CatalogEditorScreenState extends State<CatalogEditorScreen> {
     try {
       final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1200,
-        imageQuality: 85,
+        // Catalog photos are symbolic thumbnails: keep them small.
+        maxWidth: 480,
+        imageQuality: 70,
       );
       if (picked != null && mounted) {
         setState(() => selectedImage = picked);

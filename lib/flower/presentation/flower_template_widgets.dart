@@ -87,7 +87,20 @@ class TemplateEmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TemplateIconBadge(icon: icon, size: 64),
+          // Softer than TemplateIconBadge: an empty state should stay quiet.
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: context.palette.blush.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(
+              icon,
+              size: 30,
+              color: context.palette.muted.withValues(alpha: 0.7),
+            ),
+          ),
           const SizedBox(height: 16),
           Text(
             message,

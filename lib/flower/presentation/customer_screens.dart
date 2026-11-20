@@ -11,6 +11,19 @@ class CustomerScreen extends StatefulWidget {
 
 class _CustomerScreenState extends State<CustomerScreen> {
   final search = TextEditingController();
+  // Re-query only when the search text changes, not on every rebuild.
+  late Future<List<CustomerSummary>> _customers = widget.repository.customers();
+  String _query = '';
+
+  void _onSearchChanged(String value) {
+    if (value == _query) {
+      return;
+    }
+    setState(() {
+      _query = value;
+      _customers = widget.repository.customers(query: value);
+    });
+  }
 
   @override
   void dispose() {
@@ -34,7 +47,7 @@ class _CustomerScreenState extends State<CustomerScreen> {
               const SizedBox(height: 16),
               TextField(
                 controller: search,
-                onChanged: (_) => setState(() {}),
+                onChanged: _onSearchChanged,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search),
                   hintText: 'Tìm tên hoặc số điện thoại',
@@ -45,7 +58,7 @@ class _CustomerScreenState extends State<CustomerScreen> {
         ),
         Expanded(
           child: FutureBuilder<List<CustomerSummary>>(
-            future: widget.repository.customers(query: search.text),
+            future: _customers,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return const Center(child: Text('Không thể tải khách hàng'));
@@ -199,8 +212,17 @@ class CustomerDetailScreen extends StatelessWidget {
               Card(
                 child: ListTile(
                   title: Text(order.productName),
-                  subtitle: Text(
-                    '${dayLabel(order.deliveryAt)} · ${order.statusLabel}',
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(dayLabel(order.deliveryAt)),
+                        OrderStatusChip(order: order),
+                      ],
+                    ),
                   ),
                   trailing: Text(money(order.total)),
                 ),

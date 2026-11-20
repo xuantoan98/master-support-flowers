@@ -304,6 +304,19 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     });
   }
 
+  String? _suggestionQuery;
+  Future<List<CustomerSummary>>? _suggestions;
+
+  /// Same future while the query is unchanged, so rebuilds (each keystroke in
+  /// other fields) neither re-query nor reset the suggestion card.
+  Future<List<CustomerSummary>> _customerSuggestions(String query) {
+    if (query != _suggestionQuery || _suggestions == null) {
+      _suggestionQuery = query;
+      _suggestions = widget.repository.customers(query: query);
+    }
+    return _suggestions!;
+  }
+
   void _scheduleDraftSave() {
     if (widget.initialOrder != null) {
       return;
@@ -949,8 +962,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         if (name.text.trim().length >= 2 ||
                             phone.text.trim().length >= 2)
                           FutureBuilder<List<CustomerSummary>>(
-                            future: widget.repository.customers(
-                              query: phone.text.trim().length >= 2
+                            future: _customerSuggestions(
+                              phone.text.trim().length >= 2
                                   ? phone.text
                                   : name.text,
                             ),

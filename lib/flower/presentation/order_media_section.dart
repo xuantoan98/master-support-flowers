@@ -193,6 +193,15 @@ class _OrderMediaSectionState extends State<OrderMediaSection> {
                                         fileSnapshot.data!,
                                         width: 120,
                                         fit: BoxFit.cover,
+                                        // Decode camera photos (~12 MP) near
+                                        // the 120 px tile; 2× keeps landscape
+                                        // shots sharp under `cover`.
+                                        cacheWidth:
+                                            (240 *
+                                                    MediaQuery.devicePixelRatioOf(
+                                                      context,
+                                                    ))
+                                                .ceil(),
                                         errorBuilder: (_, _, _) => const Center(
                                           child: Icon(
                                             Icons.broken_image_outlined,

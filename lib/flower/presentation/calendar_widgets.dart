@@ -926,6 +926,9 @@ class OccasionBanner extends StatelessWidget {
   }
 }
 
+/// Longest the tap waits for card photos to decode before opening anyway.
+const _precacheBudget = Duration(milliseconds: 150);
+
 /// Enlarges a day's order cards out of its calendar tile; tapping a card
 /// opens that order.
 Future<void> showOrderFan(
@@ -933,15 +936,31 @@ Future<void> showOrderFan(
   required DateTime date,
   required List<FlowerOrder> orders,
   required ValueChanged<FlowerOrder> onOpenOrder,
-}) {
+}) async {
   final box = context.findRenderObject()! as RenderBox;
   final origin = box.localToGlobal(Offset.zero) & box.size;
+  // Decode the card photos before the popup opens; otherwise the first frames
+  // stall on decoding and the photos pop in mid-animation. The provider must
+  // match the card's Image.asset(cacheWidth: _BigOrderCard.cacheWidth).
+  await Future.wait([
+    for (final order in orders.take(3))
+      precacheImage(
+        ResizeImage(
+          AssetImage(orderThumbnail(order)),
+          width: _BigOrderCard.cacheWidth,
+        ),
+        context,
+      ),
+  ]).timeout(_precacheBudget, onTimeout: () => const []);
+  if (!context.mounted) {
+    return;
+  }
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Đóng',
     barrierColor: Colors.black.withValues(alpha: 0.28),
-    transitionDuration: const Duration(milliseconds: 260),
+    transitionDuration: const Duration(milliseconds: 320),
     pageBuilder: (dialogContext, animation, _) => _OrderFanPopup(
       animation: animation,
       origin: origin,
@@ -999,82 +1018,92 @@ class _OrderFanPopup extends StatelessWidget {
     );
     final curved = CurvedAnimation(
       parent: animation,
-      curve: Curves.easeOutBack,
-      reverseCurve: Curves.easeIn,
+      // No overshoot: a smooth grow-in reads better than a bounce.
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
     );
-    return AnimatedBuilder(
-      animation: curved,
-      builder: (context, _) {
-        final t = curved.value;
-        final center = Offset.lerp(origin.center, target, t.clamp(0.0, 1.0))!;
-        final scale = 0.3 + 0.7 * t;
-        return Stack(
-          children: [
-            Positioned(
-              left: center.dx - fanWidth / 2,
-              top: center.dy - fanHeight / 2,
-              width: fanWidth,
-              height: fanHeight + 72,
-              child: Opacity(
-                opacity: animation.value.clamp(0.0, 1.0),
-                child: Transform.scale(
-                  scale: scale,
-                  alignment: Alignment.topCenter,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: fanWidth,
-                        height: fanHeight,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          clipBehavior: Clip.none,
-                          children: [
-                            for (var i = 0; i < shown.length; i++)
-                              Transform.translate(
-                                offset: Offset(
-                                  spread * (i - (shown.length - 1) / 2) * t,
-                                  angles[i].abs() * 40 * t,
-                                ),
-                                child: Transform.rotate(
-                                  angle: angles[i] * t,
-                                  alignment: Alignment.bottomCenter,
-                                  child: _BigOrderCard(
-                                    order: shown[i],
-                                    onTap: () => onOpen(shown[i]),
-                                  ),
+    // Fade in quickly so the cards are opaque for most of the grow.
+    final fade = CurvedAnimation(
+      parent: animation,
+      curve: const Interval(0, 0.45, curve: Curves.easeOut),
+    );
+    final left = target.dx - fanWidth / 2;
+    final top = target.dy - fanHeight / 2;
+    const boxHeight = fanHeight + 72;
+    // Grow out of the tapped day and shrink back into it on close: the scale
+    // pivot is the day cell's centre, expressed relative to the fan's box.
+    final pivot = Alignment(
+      (origin.center.dx - left) / fanWidth * 2 - 1,
+      (origin.center.dy - top) / boxHeight * 2 - 1,
+    );
+    return Stack(
+      children: [
+        Positioned(
+          left: left,
+          top: top,
+          width: fanWidth,
+          height: boxHeight,
+          child: FadeTransition(
+            opacity: fade,
+            child: ScaleTransition(
+              scale: curved,
+              alignment: pivot,
+              // Paint the fan once; each frame only re-transforms the layer.
+              child: RepaintBoundary(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: fanWidth,
+                      height: fanHeight,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        clipBehavior: Clip.none,
+                        children: [
+                          for (var i = 0; i < shown.length; i++)
+                            Transform.translate(
+                              offset: Offset(
+                                spread * (i - (shown.length - 1) / 2),
+                                angles[i].abs() * 40,
+                              ),
+                              child: Transform.rotate(
+                                angle: angles[i],
+                                alignment: Alignment.bottomCenter,
+                                child: _BigOrderCard(
+                                  order: shown[i],
+                                  onTap: () => onOpen(shown[i]),
                                 ),
                               ),
-                          ],
-                        ),
-                      ),
-                      Material(
-                        color: context.palette.card,
-                        shape: const StadiumBorder(),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          child: Text(
-                            orders.length > shown.length
-                                ? '${date.day}/${date.month} · ${orders.length} đơn · xem tất cả bên dưới'
-                                : '${date.day}/${date.month} · Chạm card để mở đơn',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: context.palette.muted,
                             ),
+                        ],
+                      ),
+                    ),
+                    Material(
+                      color: context.palette.card,
+                      shape: const StadiumBorder(),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          orders.length > shown.length
+                              ? '${date.day}/${date.month} · ${orders.length} đơn · xem tất cả bên dưới'
+                              : '${date.day}/${date.month} · Chạm card để mở đơn',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.palette.muted,
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1084,6 +1113,9 @@ class _BigOrderCard extends StatelessWidget {
 
   final FlowerOrder order;
   final VoidCallback onTap;
+
+  /// Decode width of the card photo; also used to precache it.
+  static const cacheWidth = 240;
 
   @override
   Widget build(BuildContext context) {
@@ -1123,7 +1155,7 @@ class _BigOrderCard extends StatelessWidget {
                         orderThumbnail(order),
                         width: double.infinity,
                         fit: BoxFit.cover,
-                        cacheWidth: 240,
+                        cacheWidth: cacheWidth,
                         errorBuilder: (_, _, _) =>
                             ColoredBox(color: palette.blush),
                       ),

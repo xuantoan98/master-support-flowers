@@ -78,6 +78,34 @@ IconData _statusIcon(OrderStatus status) => switch (status) {
 Color _statusColorOf(BuildContext context, OrderStatus status) =>
     context.palette.adapt(_statusColor(status));
 
+/// The one way an order status is shown: a tinted pill in the status colour.
+class OrderStatusChip extends StatelessWidget {
+  const OrderStatusChip({super.key, required this.order});
+
+  final FlowerOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _statusColorOf(context, order.status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        order.statusLabel,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          height: 1.2,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 ThemeMode _themeModeFrom(String value) => switch (value) {
   'light' => ThemeMode.light,
   'dark' => ThemeMode.dark,

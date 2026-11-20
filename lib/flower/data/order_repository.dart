@@ -397,6 +397,24 @@ class OrderRepository {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  /// Whether the shop closed the one-time "back up your data" reminder.
+  Future<bool> backupReminderDismissed() async {
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['backup_reminder_dismissed'],
+    );
+    return rows.isNotEmpty && rows.first['value'] == '1';
+  }
+
+  Future<void> setBackupReminderDismissed() async {
+    await db.insert('app_settings', {
+      'key': 'backup_reminder_dismissed',
+      'value': '1',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
   Future<DateTime?> lastBackupAt() async {
     final rows = await db.query(
       'app_settings',

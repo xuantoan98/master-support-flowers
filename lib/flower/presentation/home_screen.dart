@@ -26,6 +26,10 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
 
   /// Hidden until the setting is read, and in fakes without settings.
   bool swipeHintSeen = true;
+
+  /// One-time nudge to back up once the shop has real data on the phone.
+  bool backupReminderDue = false;
+  static const _backupReminderMinOrders = 10;
   final orderSearch = TextEditingController();
   OrderStatus? orderStatusFilter;
   DateTime? orderDayFilter;
@@ -112,10 +116,21 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
       } catch (_) {
         hintSeen = true;
       }
+      var backupDue = false;
+      if (result.length >= _backupReminderMinOrders) {
+        try {
+          backupDue =
+              await widget.repository.lastBackupAt() == null &&
+              !await widget.repository.backupReminderDismissed();
+        } catch (_) {
+          // A missing setting just hides the reminder.
+        }
+      }
       if (mounted) {
         setState(() {
           skipApproval = skip;
           swipeHintSeen = hintSeen;
+          backupReminderDue = backupDue;
           orders = result;
           remindersEnabled = enabled;
           liveActivityEnabled = liveEnabled;
@@ -694,6 +709,10 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                   ),
                 ],
               ),
+              if (backupReminderDue) ...[
+                const SizedBox(height: 16),
+                _backupReminder(),
+              ],
               const SizedBox(height: 22),
               TemplateSectionHeading(
                 eyebrow: 'CẦN LÀM',
@@ -743,8 +762,19 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: Text(
-                            '#${order.id} · ${DateFormat('HH:mm dd/MM', 'vi').format(order.deliveryAt)} · ${order.statusLabel}',
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  '#${order.id} · ${DateFormat('HH:mm dd/MM', 'vi').format(order.deliveryAt)}',
+                                ),
+                                OrderStatusChip(order: order),
+                              ],
+                            ),
                           ),
                           trailing: Text(
                             money(order.remaining),
@@ -775,7 +805,7 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
               const SizedBox(height: 8),
               Card(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -792,7 +822,7 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                       else
                         for (final item in shopping.items.take(6))
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 6, right: 8),
+                            padding: const EdgeInsets.only(bottom: 6),
                             child: Row(
                               children: [
                                 Expanded(child: Text(item.name)),
@@ -811,9 +841,15 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                           '${shopping.ordersWithoutRecipe} đơn chưa có định lượng',
                           style: TextStyle(color: palette.muted, fontSize: 13),
                         ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
+                      const SizedBox(height: 8),
+                      // A full-width button so it reads as an action, not text.
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 46),
+                          ),
+                          icon: const Icon(Icons.shopping_basket_outlined),
                           onPressed: () async {
                             await Navigator.of(context).push<void>(
                               MaterialPageRoute(
@@ -825,7 +861,7 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                             );
                             await refresh();
                           },
-                          child: Text(
+                          label: Text(
                             shopping.items.length > 6
                                 ? 'Xem đủ ${shopping.items.length} loại hoa'
                                 : 'Mở danh sách mua',
@@ -926,10 +962,20 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Text(
-                          '${isOverdue(order, now) ? 'Quá hạn' : 'Hôm nay'} · '
-                          '${DateFormat('HH:mm dd/MM', 'vi').format(order.deliveryAt)} · '
-                          '${order.statusLabel}',
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                '${isOverdue(order, now) ? 'Quá hạn' : 'Hôm nay'} · '
+                                '${DateFormat('HH:mm dd/MM', 'vi').format(order.deliveryAt)}',
+                              ),
+                              OrderStatusChip(order: order),
+                            ],
+                          ),
                         ),
                         onTap: () {
                           Navigator.pop(sheetContext);
@@ -972,6 +1018,79 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
   void _markSwipeHintSeen() {
     setState(() => swipeHintSeen = true);
     widget.repository.setSwipeHintSeen().catchError((Object _) {});
+  }
+
+  /// Data lives only on this phone, so nudge once to make a first backup.
+  /// Gone after a backup or after "Để sau".
+  Widget _backupReminder() {
+    final palette = context.palette;
+    return Card(
+      color: palette.accent.withValues(alpha: 0.10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.cloud_upload_outlined, color: palette.accent),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Sao lưu dữ liệu tiệm',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Đơn và khách chỉ nằm trên máy này. Sao lưu để '
+                        'không mất khi hỏng hoặc đổi máy.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Wraps the buttons onto two lines with large system text.
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              overflowAlignment: OverflowBarAlignment.end,
+              spacing: 4,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    setState(() => backupReminderDue = false);
+                    widget.repository.setBackupReminderDismissed().catchError(
+                      (Object _) {},
+                    );
+                  },
+                  child: const Text('Để sau'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => BackupScreen(
+                          repository: widget.repository,
+                          onRestored: refresh,
+                        ),
+                      ),
+                    );
+                    await refresh();
+                  },
+                  child: const Text('Sao lưu ngay'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Shown above order lists until the shop swipes once or closes it.
@@ -1072,73 +1191,75 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
       status: orderStatusFilter,
       deliveryDay: orderDayFilter,
     );
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-      children: [
-        TemplateSectionHeading(
-          eyebrow: 'QUẢN LÝ',
-          title: 'Đơn hàng của bạn',
-          trailing: Text(
-            '${visible.length} đơn',
-            style: TextStyle(color: context.palette.muted),
-          ),
+    // Header and filters are built eagerly; order cards are built lazily by
+    // ListView.builder so only on-screen cards are created on each rebuild.
+    final header = <Widget>[
+      TemplateSectionHeading(
+        eyebrow: 'QUẢN LÝ',
+        title: 'Đơn hàng của bạn',
+        trailing: Text(
+          '${visible.length} đơn',
+          style: TextStyle(color: context.palette.muted),
         ),
-        const SizedBox(height: 18),
-        TextField(
-          controller: orderSearch,
-          onChanged: (_) => setState(() {}),
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search),
-            hintText: 'Tìm khách, số điện thoại, hoa, mã đơn',
-          ),
+      ),
+      const SizedBox(height: 18),
+      TextField(
+        controller: orderSearch,
+        onChanged: (_) => setState(() {}),
+        decoration: const InputDecoration(
+          prefixIcon: Icon(Icons.search),
+          hintText: 'Tìm khách, số điện thoại, hoa, mã đơn',
         ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            DropdownButton<OrderStatus?>(
-              value: orderStatusFilter,
-              hint: const Text('Tất cả trạng thái'),
-              items: [
-                const DropdownMenuItem<OrderStatus?>(
-                  child: Text('Tất cả trạng thái'),
-                ),
-                for (final status in OrderStatus.values)
-                  DropdownMenuItem(value: status, child: Text(status.label)),
-              ],
-              onChanged: (value) => setState(() => orderStatusFilter = value),
-            ),
-            ActionChip(
-              avatar: const Icon(Icons.calendar_today_outlined, size: 18),
-              label: Text(
-                orderDayFilter == null
-                    ? 'Ngày giao'
-                    : dayLabel(orderDayFilter!),
+      ),
+      const SizedBox(height: 14),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          DropdownButton<OrderStatus?>(
+            value: orderStatusFilter,
+            hint: const Text('Tất cả trạng thái'),
+            items: [
+              const DropdownMenuItem<OrderStatus?>(
+                child: Text('Tất cả trạng thái'),
               ),
-              onPressed: pickOrderDay,
+              for (final status in OrderStatus.values)
+                DropdownMenuItem(value: status, child: Text(status.label)),
+            ],
+            onChanged: (value) => setState(() => orderStatusFilter = value),
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.calendar_today_outlined, size: 18),
+            label: Text(
+              orderDayFilter == null ? 'Ngày giao' : dayLabel(orderDayFilter!),
             ),
-            if (orderDayFilter != null)
-              IconButton(
-                tooltip: 'Bỏ lọc ngày',
-                icon: const Icon(Icons.close),
-                onPressed: () => setState(() => orderDayFilter = null),
-              ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        if (visible.isEmpty)
-          _empty(
-            orders.isEmpty
-                ? 'Chưa có đơn hàng. Tạo đơn đầu tiên của bạn nhé!'
-                : 'Không có đơn phù hợp',
-          )
-        else ...[
-          ..._swipeHint(visible),
-          ...visible.map(_swipeableOrderCard),
+            onPressed: pickOrderDay,
+          ),
+          if (orderDayFilter != null)
+            IconButton(
+              tooltip: 'Bỏ lọc ngày',
+              icon: const Icon(Icons.close),
+              onPressed: () => setState(() => orderDayFilter = null),
+            ),
         ],
-      ],
+      ),
+      const SizedBox(height: 14),
+      if (visible.isEmpty)
+        _empty(
+          orders.isEmpty
+              ? 'Chưa có đơn hàng. Tạo đơn đầu tiên của bạn nhé!'
+              : 'Không có đơn phù hợp',
+        )
+      else
+        ..._swipeHint(visible),
+    ];
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+      itemCount: header.length + visible.length,
+      itemBuilder: (context, index) => index < header.length
+          ? header[index]
+          : _swipeableOrderCard(visible[index - header.length]),
     );
   }
 
@@ -1392,7 +1513,16 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
     ),
   );
 
-  Widget _profileView() => ListView(
+  // Smaller descriptions under each store/settings tile; titles unchanged.
+  Widget _profileView() => ListTileTheme.merge(
+    subtitleTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontSize: 11.5,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    ),
+    child: _profileList(),
+  );
+
+  Widget _profileList() => ListView(
     padding: const EdgeInsets.fromLTRB(24, 8, 24, 120),
     children: [
       _storeSection('HẰNG NGÀY'),
@@ -1559,7 +1689,6 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
 
   Widget _orderCard(FlowerOrder order) {
     final palette = context.palette;
-    final statusColor = _statusColorOf(context, order.status);
     final owed = order.status != OrderStatus.cancelled && order.remaining > 0;
     final when = DateFormat('HH:mm dd/MM', 'vi').format(order.deliveryAt);
     final kindIcon = switch (order.fulfillment) {
@@ -1627,24 +1756,7 @@ class _FlowerHomeState extends State<FlowerHome> with WidgetsBindingObserver {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            order.statusLabel,
-                            style: TextStyle(
-                              color: statusColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
+                        OrderStatusChip(order: order),
                         const Spacer(),
                         Text(
                           owed

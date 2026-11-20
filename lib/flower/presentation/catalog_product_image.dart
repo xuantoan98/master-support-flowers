@@ -14,11 +14,15 @@ class CatalogProductImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imageSize = size - 8;
+    // Decode at the size drawn: catalog images are symbolic thumbnails, so
+    // 1× is enough even when `cover` slightly upscales a landscape photo.
+    final pixels = (imageSize * MediaQuery.devicePixelRatioOf(context)).ceil();
     Widget fallback() => Image.asset(
       catalogPlaceholders.first,
       width: imageSize,
       height: imageSize,
       fit: BoxFit.cover,
+      cacheWidth: pixels,
     );
 
     final image = path.startsWith('assets/')
@@ -27,6 +31,7 @@ class CatalogProductImage extends StatelessWidget {
             width: imageSize,
             height: imageSize,
             fit: BoxFit.cover,
+            cacheWidth: pixels,
             errorBuilder: (_, _, _) => fallback(),
           )
         : path.isNotEmpty
@@ -35,6 +40,7 @@ class CatalogProductImage extends StatelessWidget {
             width: imageSize,
             height: imageSize,
             fit: BoxFit.cover,
+            cacheWidth: pixels,
             errorBuilder: (_, _, _) => fallback(),
           )
         : fallback();

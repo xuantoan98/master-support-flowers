@@ -10,6 +10,7 @@ import '../domain/catalog_product.dart';
 import '../domain/flower_order.dart';
 import '../domain/order_item.dart';
 import '../domain/order_media.dart';
+import '../domain/order_status_flow.dart';
 import '../domain/shop_profile.dart';
 import '../domain/shopping_list.dart';
 
@@ -34,13 +35,22 @@ class OrderRepository {
   final Random _random;
   final DateTime Function() _now;
   Database? _db;
+  String? _path;
+
+  /// Schema version written by this build; backups from newer builds are
+  /// refused on restore.
+  static const schemaVersion = 14;
+
+  /// File of the open database, used by backup and restore.
+  String? get databasePath => _path;
 
   Future<void> open({String? databasePath}) async {
     final path =
         databasePath ?? p.join(await getDatabasesPath(), 'flower_orders.db');
+    _path = path;
     _db = await openDatabase(
       path,
-      version: 13,
+      version: schemaVersion,
       onCreate: (db, version) async {
         await db.execute('''
         CREATE TABLE customers (
@@ -65,7 +75,14 @@ class OrderRepository {
           status INTEGER NOT NULL,
           recipe_json TEXT NOT NULL DEFAULT '[]',
           items_json TEXT NOT NULL DEFAULT '[]',
-          created_at TEXT NOT NULL
+          created_at TEXT NOT NULL,
+          fulfillment TEXT NOT NULL DEFAULT 'delivery',
+          recipient_name TEXT NOT NULL DEFAULT '',
+          recipient_phone TEXT NOT NULL DEFAULT '',
+          card_message TEXT NOT NULL DEFAULT '',
+          anonymous_sender INTEGER NOT NULL DEFAULT 0,
+          discount INTEGER NOT NULL DEFAULT 0,
+          surcharge INTEGER NOT NULL DEFAULT 0
         )
       ''');
         await db.execute(
@@ -182,8 +199,34 @@ class OrderRepository {
         if (oldVersion < 13) {
           await _createSettingsTable(db);
         }
+        if (oldVersion < 14) {
+          await _addOrderRetailColumns(db);
+        }
       },
     );
+  }
+
+  /// v14: gift orders, hand-over kind, discounts and payment methods.
+  Future<void> _addOrderRetailColumns(DatabaseExecutor db) async {
+    Future<void> addColumn(String table, String column, String ddl) async {
+      final columns = await db.rawQuery('PRAGMA table_info($table)');
+      if (columns.isNotEmpty && !columns.any((c) => c['name'] == column)) {
+        await db.execute('ALTER TABLE $table ADD COLUMN $column $ddl');
+      }
+    }
+
+    await addColumn(
+      'orders',
+      'fulfillment',
+      "TEXT NOT NULL DEFAULT 'delivery'",
+    );
+    await addColumn('orders', 'recipient_name', "TEXT NOT NULL DEFAULT ''");
+    await addColumn('orders', 'recipient_phone', "TEXT NOT NULL DEFAULT ''");
+    await addColumn('orders', 'card_message', "TEXT NOT NULL DEFAULT ''");
+    await addColumn('orders', 'anonymous_sender', 'INTEGER NOT NULL DEFAULT 0');
+    await addColumn('orders', 'discount', 'INTEGER NOT NULL DEFAULT 0');
+    await addColumn('orders', 'surcharge', 'INTEGER NOT NULL DEFAULT 0');
+    await addColumn('payments', 'method', "TEXT NOT NULL DEFAULT ''");
   }
 
   Future<void> _createSettingsTable(DatabaseExecutor db) async {
@@ -241,6 +284,44 @@ class OrderRepository {
     return rows.isNotEmpty && rows.first['value'] == '1';
   }
 
+  /// When on, the quick status action goes from "Đang làm" straight to the
+  /// next hand-over step without "Chờ duyệt".
+  Future<bool> skipApproval() async {
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['skip_approval'],
+    );
+    return rows.isNotEmpty && rows.first['value'] == '1';
+  }
+
+  Future<void> setSkipApproval(bool enabled) async {
+    await db.insert('app_settings', {
+      'key': 'skip_approval',
+      'value': enabled ? '1' : '0',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<DateTime?> lastBackupAt() async {
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['last_backup_at'],
+    );
+    return rows.isEmpty
+        ? null
+        : DateTime.tryParse(rows.first['value']! as String);
+  }
+
+  Future<void> setLastBackupAt(DateTime value) async {
+    await db.insert('app_settings', {
+      'key': 'last_backup_at',
+      'value': value.toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
   Future<void> setLiveActivityEnabled(bool enabled) async {
     await db.insert('app_settings', {
       'key': 'live_activity_enabled',
@@ -287,7 +368,8 @@ class OrderRepository {
         order_id INTEGER NOT NULL REFERENCES orders(id),
         amount INTEGER NOT NULL CHECK(amount != 0),
         occurred_at TEXT NOT NULL,
-        note TEXT NOT NULL DEFAULT ''
+        note TEXT NOT NULL DEFAULT '',
+        method TEXT NOT NULL DEFAULT ''
       )
     ''');
     await db.execute(
@@ -730,15 +812,20 @@ class OrderRepository {
         .toList();
   }
 
-  Future<int> add(FlowerOrder order) async {
+  /// Saves a new order. [paymentMethod] describes the deposit in
+  /// [FlowerOrder.paid], if any.
+  Future<int> add(FlowerOrder order, {PaymentMethod? paymentMethod}) async {
     final error = order.validate();
     if (error != null) {
       throw ArgumentError(error);
     }
     return db.transaction((txn) async {
-      final timeIssue = deliveryTimeIssue(order.deliveryAt, now: _now());
-      if (timeIssue != null) {
-        throw ArgumentError(timeIssue);
+      // A counter sale is handed over now, so its time is never in the future.
+      if (order.fulfillment != FulfillmentType.counter) {
+        final timeIssue = deliveryTimeIssue(order.deliveryAt, now: _now());
+        if (timeIssue != null) {
+          throw ArgumentError(timeIssue);
+        }
       }
       await txn.insert('customers', {
         'name': order.customerName.trim(),
@@ -753,7 +840,8 @@ class OrderRepository {
           'order_id': id,
           'amount': order.paid,
           'occurred_at': DateTime.now().toIso8601String(),
-          'note': 'Tiền cọc',
+          'note': order.paid >= order.total ? 'Thanh toán đủ' : 'Tiền cọc',
+          'method': paymentMethod?.name ?? '',
         });
       }
       await txn.insert('status_history', {
@@ -816,6 +904,13 @@ class OrderRepository {
         'delivery_at': 'Giờ giao',
         'address': 'Địa chỉ',
         'note': 'Ghi chú',
+        'fulfillment': 'Hình thức nhận',
+        'recipient_name': 'Người nhận',
+        'recipient_phone': 'SĐT người nhận',
+        'card_message': 'Lời thiệp',
+        'anonymous_sender': 'Ẩn danh người tặng',
+        'discount': 'Giảm giá',
+        'surcharge': 'Phụ thu',
       };
       for (final entry in labels.entries) {
         if (previous[entry.key] != values[entry.key]) {
@@ -851,7 +946,7 @@ class OrderRepository {
     await db.transaction((txn) async {
       final rows = await txn.query(
         'orders',
-        columns: ['status'],
+        columns: ['status', 'fulfillment'],
         where: 'id = ?',
         whereArgs: [order.id],
         limit: 1,
@@ -860,7 +955,10 @@ class OrderRepository {
         throw ArgumentError('Order does not exist');
       }
       final current = OrderStatus.values[rows.single['status']! as int];
-      if (!current.allowedNext.contains(status)) {
+      final fulfillment = FulfillmentTypeLabel.parse(
+        rows.single['fulfillment'],
+      );
+      if (!canChangeStatus(fulfillment, current, status)) {
         throw ArgumentError('Invalid status transition');
       }
       await txn.update(
@@ -924,6 +1022,7 @@ class OrderRepository {
             amount: row['amount']! as int,
             occurredAt: DateTime.parse(row['occurred_at']! as String),
             note: row['note']! as String,
+            method: PaymentMethodLabel.parse(row['method']),
           ),
         )
         .toList();
@@ -941,14 +1040,19 @@ class OrderRepository {
         .toList();
   }
 
-  Future<void> addPayment(int orderId, int amount, {String note = ''}) async {
+  Future<void> addPayment(
+    int orderId,
+    int amount, {
+    String note = '',
+    PaymentMethod? method,
+  }) async {
     if (amount == 0) {
       throw ArgumentError('Payment amount cannot be zero');
     }
     await db.transaction((txn) async {
       final orderRows = await txn.query(
         'orders',
-        columns: ['price', 'shipping_fee', 'status'],
+        columns: ['price', 'shipping_fee', 'discount', 'surcharge', 'status'],
         where: 'id = ?',
         whereArgs: [orderId],
         limit: 1,
@@ -960,9 +1064,12 @@ class OrderRepository {
           orderRows.single['status'] == OrderStatus.cancelled.index) {
         throw ArgumentError('Cannot collect payment for a cancelled order');
       }
+      final row = orderRows.single;
       final total =
-          (orderRows.single['price']! as int) +
-          (orderRows.single['shipping_fee']! as int);
+          (row['price']! as int) +
+          (row['shipping_fee']! as int) +
+          (row['surcharge']! as int) -
+          (row['discount']! as int);
       final paidRows = await txn.rawQuery(
         'SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE order_id = ?',
         [orderId],
@@ -976,11 +1083,15 @@ class OrderRepository {
         'amount': amount,
         'occurred_at': DateTime.now().toIso8601String(),
         'note': note.trim(),
+        'method': method?.name ?? '',
       });
     });
   }
 
-  Future<void> close() async => _db?.close();
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
 
   Map<String, Object?> _toRow(FlowerOrder order) => {
     'customer_name': order.customerName.trim(),
@@ -997,6 +1108,13 @@ class OrderRepository {
     ),
     'items_json': jsonEncode(order.items.map((item) => item.toJson()).toList()),
     'status': order.status.index,
+    'fulfillment': order.fulfillment.key,
+    'recipient_name': order.recipientName.trim(),
+    'recipient_phone': order.recipientPhone.trim(),
+    'card_message': order.cardMessage.trim(),
+    'anonymous_sender': order.anonymousSender ? 1 : 0,
+    'discount': order.discount,
+    'surcharge': order.surcharge,
   };
 
   FlowerOrder _fromRow(Map<String, Object?> row) => FlowerOrder(
@@ -1017,5 +1135,12 @@ class OrderRepository {
         .map((item) => OrderItem.fromJson(item as Map<String, dynamic>))
         .toList(),
     status: OrderStatus.values[row['status']! as int],
+    fulfillment: FulfillmentTypeLabel.parse(row['fulfillment']),
+    recipientName: row['recipient_name'] as String? ?? '',
+    recipientPhone: row['recipient_phone'] as String? ?? '',
+    cardMessage: row['card_message'] as String? ?? '',
+    anonymousSender: (row['anonymous_sender'] as int? ?? 0) == 1,
+    discount: row['discount'] as int? ?? 0,
+    surcharge: row['surcharge'] as int? ?? 0,
   );
 }

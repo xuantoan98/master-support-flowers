@@ -8,9 +8,16 @@ import 'flower_template_theme.dart';
 import 'flower_template_widgets.dart';
 
 class ShoppingListScreen extends StatefulWidget {
-  const ShoppingListScreen({super.key, required this.repository});
+  const ShoppingListScreen({
+    super.key,
+    required this.repository,
+    this.initialPeriod = 0,
+  });
 
   final OrderRepository repository;
+
+  /// 0 = today, 1 = tomorrow, 2 = next 7 days.
+  final int initialPeriod;
 
   @override
   State<ShoppingListScreen> createState() => _ShoppingListScreenState();
@@ -25,7 +32,7 @@ class _ShoppingData {
 }
 
 class _ShoppingListScreenState extends State<ShoppingListScreen> {
-  int period = 0;
+  late int period = widget.initialPeriod;
   late Future<_ShoppingData> data = load();
 
   Future<_ShoppingData> load() async {

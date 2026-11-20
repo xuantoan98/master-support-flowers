@@ -1,3 +1,5 @@
+import 'vietqr.dart';
+
 class ShopProfile {
   const ShopProfile({
     this.name = 'Tiệm Hoa',
@@ -30,9 +32,27 @@ class ShopProfile {
   final String accountHolder;
   final String qrImagePath;
 
+  /// Enough bank details to print a VietQR with the amount filled in.
+  bool get hasVietQr =>
+      buildVietQrPayload(bankBin: bankBin, accountNumber: accountNumber) !=
+      null;
+
+  String? vietQrPayload({int? amount, String note = ''}) => buildVietQrPayload(
+    bankBin: bankBin,
+    accountNumber: accountNumber,
+    amount: amount,
+    note: note,
+  );
+
   String? validate() {
     if (name.trim().isEmpty) {
       return 'Vui lòng nhập tên shop';
+    }
+    if (accountNumber.trim().isNotEmpty &&
+        !RegExp(
+          r'^[0-9A-Za-z]{1,19}$',
+        ).hasMatch(accountNumber.replaceAll(RegExp(r'\s'), ''))) {
+      return 'Số tài khoản chỉ gồm chữ số hoặc chữ cái, tối đa 19 ký tự';
     }
     return null;
   }

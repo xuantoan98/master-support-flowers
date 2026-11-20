@@ -10,7 +10,12 @@ class FakePaymentRepository extends OrderRepository {
   int paid = 50000;
 
   @override
-  Future<void> addPayment(int orderId, int amount, {String note = ''}) async {
+  Future<void> addPayment(
+    int orderId,
+    int amount, {
+    String note = '',
+    PaymentMethod? method,
+  }) async {
     paid += amount;
   }
 

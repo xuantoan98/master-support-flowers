@@ -239,11 +239,13 @@ class _DayCell extends StatelessWidget {
       label: label,
       excludeSemantics: true,
       child: Opacity(
-        opacity: past && !overdue && !selected ? 0.5 : 1,
+        // Past days stay faded (disabled look) even when selected; their
+        // order cards still show and open. Overdue days stand out instead.
+        opacity: past && !overdue ? 0.5 : 1,
         child: AspectRatio(
           aspectRatio: 0.95,
           child: AnimatedScale(
-            scale: selected ? 1.04 : 1,
+            scale: selected && !past ? 1.04 : 1,
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutBack,
             child: Material(
@@ -252,7 +254,8 @@ class _DayCell extends StatelessWidget {
                   : palette.line.withValues(alpha: palette.isDark ? 0.45 : 0.4),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
-                side: selected
+                // No selection ring on past days: they cannot take new orders.
+                side: selected && !past
                     ? BorderSide(color: palette.primary, width: 2)
                     : BorderSide.none,
               ),
@@ -1155,7 +1158,7 @@ class _BigOrderCard extends StatelessWidget {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              '$time · ${order.status.label}',
+                              '$time · ${order.statusLabel}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(

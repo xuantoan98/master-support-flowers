@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../data/order_repository.dart';
 import '../data/payment_qr_store.dart';
 import '../domain/shop_profile.dart';
+import '../domain/vn_banks.dart';
 import 'app_toast.dart';
 
 class ShopProfileScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
   final accountNumber = TextEditingController();
   final accountHolder = TextEditingController();
   ShopProfile? original;
+  String bankBin = '';
   XFile? selectedQr;
   bool removeQr = false;
   bool loading = true;
@@ -49,6 +51,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
       phone.text = profile.phone;
       address.text = profile.address;
       bankName.text = profile.bankName;
+      bankBin = profile.bankBin;
       accountNumber.text = profile.accountNumber;
       accountHolder.text = profile.accountHolder;
       if (mounted) {
@@ -90,7 +93,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
       name: name.text,
       phone: phone.text,
       address: address.text,
-      bankBin: original?.bankBin ?? '',
+      bankBin: bankBin,
       bankName: bankName.text,
       accountNumber: accountNumber.text,
       accountHolder: accountHolder.text,
@@ -146,6 +149,21 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
       if (mounted) {
         setState(() => saving = false);
       }
+    }
+  }
+
+  Future<void> pickBank() async {
+    final chosen = await showModalBottomSheet<VnBank>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _BankPickerSheet(selectedBin: bankBin),
+    );
+    if (chosen != null && mounted) {
+      setState(() {
+        bankBin = chosen.bin;
+        bankName.text = chosen.shortName;
+      });
     }
   }
 
@@ -205,12 +223,53 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
                 ),
                 const SizedBox(height: 28),
                 const Text(
-                  'Ảnh QR ngân hàng',
+                  'Tài khoản nhận tiền',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Chọn ảnh QR từ ứng dụng ngân hàng. Ảnh được lưu trên thiết bị và xuất hiện trên hóa đơn. Nếu QR có sẵn số tiền cố định, hãy kiểm tra trước khi chia sẻ.',
+                  'Khi có ngân hàng và số tài khoản, hóa đơn và nút "Mã QR" sẽ tạo mã VietQR có sẵn số tiền còn lại và mã đơn. Hãy quét thử bằng app ngân hàng một lần để kiểm tra.',
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: ListTile(
+                    leading: const Icon(Icons.account_balance_outlined),
+                    title: Text(
+                      bankByBin(bankBin)?.shortName ??
+                          (bankName.text.isEmpty
+                              ? 'Chọn ngân hàng'
+                              : bankName.text),
+                    ),
+                    subtitle: Text(
+                      bankByBin(bankBin)?.name ?? 'Cần chọn để tạo mã VietQR',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: saving ? null : pickBank,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: accountNumber,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Số tài khoản'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: accountHolder,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Tên chủ tài khoản',
+                  ),
+                ),
+                const SizedBox(height: 28),
+                const Text(
+                  'Ảnh QR ngân hàng (dự phòng)',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Chỉ dùng khi chưa chọn ngân hàng: ảnh QR từ app ngân hàng sẽ in lên hóa đơn, khách tự nhập số tiền.',
                 ),
                 const SizedBox(height: 12),
                 if (!removeQr &&
@@ -250,27 +309,6 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Xóa ảnh QR'),
                   ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: bankName,
-                  decoration: const InputDecoration(
-                    labelText: 'Tên ngân hàng (tùy chọn)',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: accountNumber,
-                  decoration: const InputDecoration(
-                    labelText: 'Số tài khoản (tùy chọn)',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: accountHolder,
-                  decoration: const InputDecoration(
-                    labelText: 'Tên chủ tài khoản (tùy chọn)',
-                  ),
-                ),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: saving ? null : save,
@@ -280,4 +318,71 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
             ),
           ),
   );
+}
+
+/// Searchable bank list. Owns its search field so the field lives exactly as
+/// long as the sheet, including its closing animation.
+class _BankPickerSheet extends StatefulWidget {
+  const _BankPickerSheet({required this.selectedBin});
+
+  final String selectedBin;
+
+  @override
+  State<_BankPickerSheet> createState() => _BankPickerSheetState();
+}
+
+class _BankPickerSheetState extends State<_BankPickerSheet> {
+  final search = TextEditingController();
+
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final term = search.text.trim().toLowerCase();
+    final banks = vnBanks
+        .where(
+          (bank) => term.isEmpty || bank.label.toLowerCase().contains(term),
+        )
+        .toList();
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.75,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: TextField(
+                controller: search,
+                autofocus: true,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  hintText: 'Tìm ngân hàng',
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final bank in banks)
+                    ListTile(
+                      title: Text(bank.shortName),
+                      subtitle: Text(bank.name),
+                      trailing: bank.bin == widget.selectedBin
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () => Navigator.pop(context, bank),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

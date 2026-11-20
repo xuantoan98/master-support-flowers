@@ -75,6 +75,9 @@ class _AddressFieldState extends State<AddressField> {
         suggestions = result.take(5).toList();
         loading = false;
       });
+      if (suggestions.isNotEmpty) {
+        _revealSuggestions();
+      }
     } catch (_) {
       if (!mounted || id != _requestId) {
         return;
@@ -85,6 +88,21 @@ class _AddressFieldState extends State<AddressField> {
         failed = true;
       });
     }
+  }
+
+  /// Scrolls the field to the top of the screen so its suggestions sit above
+  /// the keyboard and the form's floating buttons instead of under them.
+  void _revealSuggestions() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || Scrollable.maybeOf(context) == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   void _pick(AddressSuggestion suggestion) {

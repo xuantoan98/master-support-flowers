@@ -64,4 +64,70 @@ void main() {
       expect(opened?.id, target.id);
     }
   });
+
+  testWidgets('a past day with orders stays disabled-looking but opens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final past = DateTime(2030, 6, 5);
+    final done = FlowerOrder(
+      id: 7,
+      customerName: 'Dung',
+      phone: '',
+      productName: 'Bó hồng',
+      price: 100000,
+      shippingFee: 0,
+      paid: 100000,
+      deliveryAt: past.add(const Duration(hours: 9)),
+      address: '',
+      status: OrderStatus.delivered,
+    );
+    FlowerOrder? opened;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: FlowerTemplateTheme.light(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DeliveryCalendar(
+              // The past day is the selected one.
+              month: DateTime(2030, 6),
+              selected: past,
+              today: DateTime(2030, 6, 20),
+              ordersByDay: {
+                past: [done],
+              },
+              onSelect: (_) {},
+              onShift: (_) {},
+              onOpenOrder: (order) => opened = order,
+            ),
+          ),
+        ),
+      ),
+    );
+    final cell = find.bySemanticsLabel(RegExp(r'^5/6, 1 đơn'));
+    final opacity = tester
+        .widget<Opacity>(
+          find.descendant(of: cell, matching: find.byType(Opacity)).first,
+        )
+        .opacity;
+    expect(opacity, 0.5, reason: 'past days keep the disabled look');
+    final shape =
+        tester
+                .widget<Material>(
+                  find
+                      .descendant(of: cell, matching: find.byType(Material))
+                      .first,
+                )
+                .shape!
+            as RoundedRectangleBorder;
+    expect(shape.side, BorderSide.none, reason: 'no selection ring');
+
+    await tester.tap(cell);
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel(RegExp('^Mở đơn Dung,')));
+    await tester.pumpAndSettle();
+    expect(opened?.id, 7);
+  });
 }

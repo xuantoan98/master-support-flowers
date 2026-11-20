@@ -140,3 +140,6 @@ lib/src/gen/l18n/
 Best-Flutter-UI-Templates.zip
 assets/template/
 Clone_app_Flowie_Quan_ly_don_hoa.pdf
+
+# Local secrets (API keys) passed with --dart-define-from-file
+config/*.local.json

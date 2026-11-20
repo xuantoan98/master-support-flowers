@@ -9,8 +9,10 @@ import 'package:share_plus/share_plus.dart';
 import '../data/order_repository.dart';
 import '../domain/flower_order.dart';
 import '../domain/shop_profile.dart';
+import '../domain/vietqr.dart';
 import 'app_toast.dart';
 import 'flower_template_theme.dart';
+import 'payment_qr.dart';
 import 'shop_profile_screen.dart';
 
 class InvoiceScreen extends StatefulWidget {
@@ -65,10 +67,12 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     }
   }
 
+  /// A QR is printed while money is still owed: the generated VietQR when
+  /// the shop has bank details, otherwise its uploaded QR image.
   bool get canShowQr =>
       widget.order.status != OrderStatus.cancelled &&
       widget.order.remaining > 0 &&
-      qrExists;
+      (qrExists || (shop?.hasVietQr ?? false));
 
   Future<void> shareInvoice(BuildContext buttonContext) async {
     if (sharing) {
@@ -134,7 +138,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 const SizedBox(height: 12),
                 if (widget.order.remaining > 0 &&
                     widget.order.status != OrderStatus.cancelled) ...[
-                  if (!qrExists)
+                  if (!qrExists && !shop!.hasVietQr)
                     TextButton.icon(
                       onPressed: () async {
                         await Navigator.push<void>(
@@ -148,9 +152,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         await load();
                       },
                       icon: const Icon(Icons.account_balance_outlined),
-                      label: const Text('Tải ảnh QR ngân hàng lên'),
+                      label: const Text('Thêm tài khoản ngân hàng để in mã QR'),
                     )
-                  else
+                  else if (!shop!.hasVietQr)
                     const Text(
                       'Ảnh QR do shop cung cấp. Nếu ảnh có số tiền cố định, hãy đối chiếu trước khi chia sẻ.',
                     ),
@@ -234,17 +238,24 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           const SizedBox(height: 12),
           _row('Khách hàng', order.customerName),
           if (order.phone.isNotEmpty) _row('Điện thoại', order.phone),
-          _row(
-            'Giao lúc',
-            DateFormat('HH:mm dd/MM/yyyy', 'vi').format(order.deliveryAt),
-          ),
-          _row('Địa chỉ giao', order.address),
+          if (order.isGift) _row('Người nhận', order.recipientName),
+          _row('Hình thức', order.fulfillment.label),
+          _row(switch (order.fulfillment) {
+            FulfillmentType.delivery => 'Giao lúc',
+            FulfillmentType.pickup => 'Nhận lúc',
+            FulfillmentType.counter => 'Ngày mua',
+          }, DateFormat('HH:mm dd/MM/yyyy', 'vi').format(order.deliveryAt)),
+          if (order.needsAddress) _row('Địa chỉ giao', order.address),
           const Divider(height: 28),
           for (final item in order.effectiveItems)
             _row('${item.quantity} × ${item.name}', _money(item.total)),
           const Divider(height: 28),
           _row('Giá hoa', _money(order.price)),
-          _row('Phí giao', _money(order.shippingFee)),
+          if (order.shippingFee > 0 || order.needsAddress)
+            _row('Phí giao', _money(order.shippingFee)),
+          if (order.surcharge > 0) _row('Phụ thu', _money(order.surcharge)),
+          if (order.discount > 0)
+            _row('Giảm giá', '-${_money(order.discount)}'),
           _row('Tổng cộng', _money(order.total), bold: true),
           _row('Đã thu', _money(order.paid)),
           if (order.status == OrderStatus.cancelled)
@@ -255,7 +266,17 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             )
           else
             _row('Còn phải thu', _money(order.remaining), bold: true),
-          if (canShowQr) ...[
+          if (canShowQr && profile.hasVietQr) ...[
+            const SizedBox(height: 14),
+            Center(
+              child: VietQrCard(
+                profile: profile,
+                amount: order.remaining,
+                note: vietQrOrderNote(order.id ?? 0),
+                size: 200,
+              ),
+            ),
+          ] else if (canShowQr && qrExists) ...[
             const SizedBox(height: 14),
             Center(
               child: Image.file(

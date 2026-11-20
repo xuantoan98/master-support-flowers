@@ -19,7 +19,7 @@ class FakeOrderRepository extends OrderRepository {
   Future<List<FlowerOrder>> all() async => orders;
 
   @override
-  Future<int> add(FlowerOrder order) async {
+  Future<int> add(FlowerOrder order, {PaymentMethod? paymentMethod}) async {
     orders.add(order);
     draft = null;
     return orders.length;
@@ -48,6 +48,18 @@ class FakeOrderRepository extends OrderRepository {
   ];
 }
 
+/// The "+" button asks for a counter sale or a pre-order.
+Future<void> openCreateOrder(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Tạo đơn'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Tạo đơn đặt trước'));
+}
+
+Future<void> openCalendar(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Lịch giao theo tháng'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUpAll(() async => initializeDateFormatting('vi'));
 
@@ -56,7 +68,7 @@ void main() {
     await tester.pumpWidget(FlowerApp(repository: repository));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), 'Lan');
     await tester.tap(find.text('Tiếp tục'));
@@ -71,8 +83,9 @@ void main() {
     await tester.tap(find.text('Tiếp tục'));
     await tester.pumpAndSettle();
 
+    // Payment step: shipping, discount, surcharge, deposit.
     await tester.enterText(find.byType(TextField).at(0), '30000');
-    await tester.enterText(find.byType(TextField).at(1), '50000');
+    await tester.enterText(find.byType(TextField).at(3), '50000');
     await tester.tap(find.text('Tiếp tục'));
     await tester.pumpAndSettle();
     expect(repository.orders, isEmpty, reason: 'review must not save');
@@ -113,7 +126,7 @@ void main() {
     final repository = FakeOrderRepository();
     await tester.pumpWidget(FlowerApp(repository: repository));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'Lan');
     await tester.tap(find.text('Tiếp tục'));
@@ -217,7 +230,7 @@ void main() {
     final repository = FakeOrderRepository();
     await tester.pumpWidget(FlowerApp(repository: repository));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'Lan');
     await tester.tap(find.text('Tiếp tục'));
@@ -257,6 +270,7 @@ void main() {
     final day = today.add(const Duration(days: 3));
     await tester.pumpWidget(FlowerApp(repository: repository));
     await tester.pumpAndSettle();
+    await openCalendar(tester);
     if (day.month != today.month) {
       await tester.tap(find.byTooltip('Tháng sau'));
       await tester.pumpAndSettle();
@@ -265,7 +279,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('${day.day}').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'Lan');
     await tester.tap(find.text('Tiếp tục'));
@@ -290,6 +304,7 @@ void main() {
     };
     await tester.pumpWidget(FlowerApp(repository: repository));
     await tester.pumpAndSettle();
+    await openCalendar(tester);
     if (day.month != today.month) {
       await tester.tap(find.byTooltip('Tháng sau'));
       await tester.pumpAndSettle();
@@ -298,7 +313,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('${day.day}').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     expect(find.text(dayLabel(day)), findsOneWidget);
   });
@@ -309,7 +324,7 @@ void main() {
     final repository = FakeOrderRepository();
     await tester.pumpWidget(FlowerApp(repository: repository));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'Lan');
     await tester.tap(find.text('Tiếp tục'));
@@ -337,7 +352,7 @@ void main() {
     final repository = FakeOrderRepository();
     await tester.pumpWidget(FlowerApp(repository: repository));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     expect(find.text('Tên khách hàng *'), findsOneWidget);
     expect(find.text('Số điện thoại (không bắt buộc)'), findsOneWidget);
@@ -362,13 +377,13 @@ void main() {
     final repository = FakeOrderRepository();
     await tester.pumpWidget(FlowerApp(repository: repository));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'Khách thử');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     expect(find.text('Khách thử'), findsOneWidget);
     await tester.tap(find.byTooltip('Xóa bản nháp'));
@@ -397,7 +412,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Đơn hàng'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Tiếp tục'));
     await tester.pumpAndSettle();
@@ -406,7 +421,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.bySemanticsLabel(RegExp('^Bước 3/4: Giao hàng')),
+      find.bySemanticsLabel(RegExp('^Bước 3/4: Nhận hàng')),
       findsOneWidget,
     );
     expect(repository.orders, isEmpty);
@@ -434,7 +449,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Đơn hàng'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Tạo đơn'));
+    await openCreateOrder(tester);
     await tester.pumpAndSettle();
     expect(find.text('Chọn lại giờ giao'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Tiếp tục'), findsOneWidget);

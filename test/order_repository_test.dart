@@ -175,8 +175,13 @@ void main() {
     await reopened.updateStatus(orders.single, OrderStatus.making);
     expect((await reopened.all()).single.status, OrderStatus.making);
     expect(await reopened.statusHistory(id), hasLength(2));
+    // Steps can be skipped forwards and undone backwards…
+    await reopened.updateStatus(orders.single, OrderStatus.delivered);
+    await reopened.updateStatus(orders.single, OrderStatus.making);
+    expect((await reopened.all()).single.status, OrderStatus.making);
+    // …but not "changed" to the status the order already has.
     await expectLater(
-      reopened.updateStatus(orders.single, OrderStatus.delivered),
+      reopened.updateStatus(orders.single, OrderStatus.making),
       throwsArgumentError,
     );
     await reopened.addPayment(id, 30000, note: 'Thu thêm');

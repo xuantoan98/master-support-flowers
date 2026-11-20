@@ -36,6 +36,12 @@ class FakeCalendarRepository extends OrderRepository {
   Future<List<FlowerOrder>> all() async => items;
 }
 
+/// The first tab opens on today's list; the month calendar is one tap away.
+Future<void> openCalendar(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Lịch giao theo tháng'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUpAll(() async => initializeDateFormatting('vi'));
 
@@ -83,6 +89,7 @@ void main() {
       ]);
       await tester.pumpWidget(FlowerApp(repository: repository));
       await tester.pumpAndSettle();
+      await openCalendar(tester);
       for (var i = 0; i < 13 - now.month; i++) {
         await tester.tap(find.byTooltip('Tháng sau'));
         await tester.pumpAndSettle();
@@ -125,6 +132,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await openCalendar(tester);
     if (day.month == today.month) {
       expect(
         find.bySemanticsLabel(RegExp('^${day.day}/${day.month}, 4 đơn')),
@@ -159,6 +167,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await openCalendar(tester);
     final cell = find.bySemanticsLabel(
       RegExp('^${today.day}/${today.month}, hôm nay'),
     );
@@ -185,6 +194,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('1 đơn quá hạn'), findsOneWidget);
+    // Today's list shows it too, before the calendar is opened.
+    expect(find.textContaining('Quá hạn'), findsNothing);
+    expect(find.text('Lan'), findsWidgets);
+    await openCalendar(tester);
     await tester.tap(find.byTooltip('Đơn cần chú ý'));
     await tester.pumpAndSettle();
     expect(find.text('Đơn cần chú ý'), findsWidgets);
@@ -196,6 +209,7 @@ void main() {
   ) async {
     await tester.pumpWidget(FlowerApp(repository: FakeCalendarRepository([])));
     await tester.pumpAndSettle();
+    await openCalendar(tester);
     await tester.tap(find.byIcon(Icons.chevron_left));
     await tester.pumpAndSettle();
     final create = tester.widget<FloatingActionButton>(
@@ -210,5 +224,16 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  testWidgets('create button offers a counter sale or a pre-order', (
+    tester,
+  ) async {
+    await tester.pumpWidget(FlowerApp(repository: FakeCalendarRepository([])));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Tạo đơn'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bán nhanh tại quầy'), findsOneWidget);
+    expect(find.text('Tạo đơn đặt trước'), findsOneWidget);
   });
 }

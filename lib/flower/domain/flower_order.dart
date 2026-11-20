@@ -10,17 +10,70 @@ enum OrderStatus {
   cancelled,
 }
 
+/// How the customer gets the flowers.
+enum FulfillmentType {
+  /// The shop delivers to an address.
+  delivery,
+
+  /// The customer collects a prepared order at the shop.
+  pickup,
+
+  /// Sold and handed over at the counter right away.
+  counter,
+}
+
+extension FulfillmentTypeLabel on FulfillmentType {
+  String get label => switch (this) {
+    FulfillmentType.delivery => 'Giao tận nơi',
+    FulfillmentType.pickup => 'Khách tới lấy',
+    FulfillmentType.counter => 'Mua tại quầy',
+  };
+
+  /// Stored in SQLite; stable even if the enum is reordered.
+  String get key => name;
+
+  static FulfillmentType parse(Object? value) =>
+      FulfillmentType.values.firstWhere(
+        (type) => type.name == value,
+        orElse: () => FulfillmentType.delivery,
+      );
+}
+
+/// How a payment was made. Older payments have no method recorded.
+enum PaymentMethod { cash, transfer, cod }
+
+extension PaymentMethodLabel on PaymentMethod {
+  String get label => switch (this) {
+    PaymentMethod.cash => 'Tiền mặt',
+    PaymentMethod.transfer => 'Chuyển khoản',
+    PaymentMethod.cod => 'Shipper thu hộ (COD)',
+  };
+
+  static PaymentMethod? parse(Object? value) {
+    for (final method in PaymentMethod.values) {
+      if (method.name == value) {
+        return method;
+      }
+    }
+    return null;
+  }
+}
+
 class PaymentEntry {
   const PaymentEntry({
     required this.amount,
     required this.occurredAt,
     required this.note,
+    this.method,
   });
 
   /// Positive for money received, negative for a refund.
   final int amount;
   final DateTime occurredAt;
   final String note;
+
+  /// Null for payments recorded before methods existed.
+  final PaymentMethod? method;
 }
 
 class CustomerSummary {
@@ -93,6 +146,13 @@ class FlowerOrder {
     this.items = const [],
     this.note = '',
     this.status = OrderStatus.newOrder,
+    this.fulfillment = FulfillmentType.delivery,
+    this.recipientName = '',
+    this.recipientPhone = '',
+    this.cardMessage = '',
+    this.anonymousSender = false,
+    this.discount = 0,
+    this.surcharge = 0,
   });
 
   final int? id;
@@ -118,9 +178,39 @@ class FlowerOrder {
         ];
   final String note;
   final OrderStatus status;
+  final FulfillmentType fulfillment;
 
-  int get total => price + shippingFee;
-  int get remaining => (total - paid).clamp(0, total);
+  /// Who receives a gift order; empty when the buyer receives it.
+  final String recipientName;
+  final String recipientPhone;
+
+  /// Words for the card or banner attached to the flowers.
+  final String cardMessage;
+
+  /// Hide the buyer's name from the recipient (card, delivery slip).
+  final bool anonymousSender;
+
+  /// Money taken off the order, in đồng.
+  final int discount;
+
+  /// Extra charge such as a holiday surcharge, in đồng.
+  final int surcharge;
+
+  bool get isGift => recipientName.trim().isNotEmpty;
+  bool get needsAddress => fulfillment == FulfillmentType.delivery;
+
+  /// The person the shop contacts at hand-over time.
+  String get contactName => isGift ? recipientName : customerName;
+  String get contactPhone => isGift ? recipientPhone : phone;
+
+  int get total => price + shippingFee + surcharge - discount;
+  int get remaining => (total - paid).clamp(0, total < 0 ? 0 : total);
+
+  /// "Đã giao" only makes sense when the shop delivered the flowers.
+  String get statusLabel =>
+      status == OrderStatus.delivered && fulfillment != FulfillmentType.delivery
+      ? 'Hoàn tất'
+      : status.label;
 
   FlowerOrder copyWith({
     OrderStatus? status,
@@ -141,6 +231,13 @@ class FlowerOrder {
     items: items,
     note: note,
     status: status ?? this.status,
+    fulfillment: fulfillment,
+    recipientName: recipientName,
+    recipientPhone: recipientPhone,
+    cardMessage: cardMessage,
+    anonymousSender: anonymousSender,
+    discount: discount,
+    surcharge: surcharge,
   );
 
   String? validate() {
@@ -163,10 +260,16 @@ class FlowerOrder {
             orderItemsTotal(items) != price)) {
       return 'Danh sách sản phẩm không hợp lệ';
     }
+    if (discount < 0 || surcharge < 0) {
+      return 'Giảm giá hoặc phụ thu không hợp lệ';
+    }
+    if (discount > price + surcharge) {
+      return 'Giảm giá không vượt quá tiền hàng';
+    }
     if (shippingFee < 0 || paid < 0 || paid > total) {
       return 'Phí giao hoặc tiền đã thu không hợp lệ';
     }
-    if (address.trim().isEmpty) {
+    if (needsAddress && address.trim().isEmpty) {
       return 'Vui lòng nhập địa chỉ giao';
     }
     for (final component in components) {
@@ -205,6 +308,8 @@ List<FlowerOrder> filterOrders(
           (item) => item.name.toLowerCase().contains(term),
         ) ||
         order.address.toLowerCase().contains(term) ||
+        order.recipientName.toLowerCase().contains(term) ||
+        order.recipientPhone.toLowerCase().contains(term) ||
         order.id?.toString() == term;
   }).toList();
 }
